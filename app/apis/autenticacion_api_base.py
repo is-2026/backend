@@ -9,12 +9,12 @@ from app.models.error import Error
 from app.models.usuario_registro_input import UsuarioRegistroInput
 from app.security_api import get_token_bearerAuth
 
-class BaseAutenticacinApi:
+class BaseAutenticacionApi:
     subclasses: ClassVar[Tuple] = ()
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        BaseAutenticacinApi.subclasses = BaseAutenticacinApi.subclasses + (cls,)
+        BaseAutenticacionApi.subclasses = BaseAutenticacionApi.subclasses + (cls,)
     async def registrar_usuario(
         self,
         usuario_registro_input: UsuarioRegistroInput,

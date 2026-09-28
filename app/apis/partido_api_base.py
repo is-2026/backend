@@ -18,6 +18,14 @@ class BasePartidoApi:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         BasePartidoApi.subclasses = BasePartidoApi.subclasses + (cls,)
+    async def obtener_partido(
+        self,
+        partido_id: UUID,
+    ) -> Partido:
+        """Devuelve la información actualizada de un partido específico, incluyendo su estado y resultado actual."""
+        ...
+
+
     async def definir_alineacion(
         self,
         partido_id: UUID,
