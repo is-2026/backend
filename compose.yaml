@@ -1,8 +1,0 @@
-services:
-  backend:
-    build: .
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./app:/app/app
-    command: fastapi dev app/main.py --host 0.0.0.0 --port 8000

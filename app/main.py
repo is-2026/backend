@@ -11,8 +11,11 @@
     Do not edit the class manually.
 """  # noqa: E501
 
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+from app.db.session import check_connection, engine
 
 from app.apis.amistosos_api import router as AmistososApiRouter
 from app.apis.autenticacin_api import router as AutenticacinApiRouter
@@ -24,10 +27,17 @@ from app.apis.partido_api import router as PartidoApiRouter
 from app.apis.ranking_api import router as RankingApiRouter
 from app.apis.usuario_api import router as UsuarioApiRouter
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await check_connection()  # si MySQL no responde, la app no arranca
+    yield
+    await engine.dispose()
+
 app = FastAPI(
     title="FutBot API",
     description="API REST para la plataforma FutBot:\\ Gestion de usuarios, jugadores, partidos, ligas, comportamientos en Python y datos del ranking",
     version="1.0.0",
+    lifespan=lifespan
 )
 
 @app.get("/")
