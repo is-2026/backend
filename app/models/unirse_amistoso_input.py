@@ -20,35 +20,22 @@ import json
 
 
 
-from pydantic import BaseModel, ConfigDict, StrictStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
-from uuid import UUID
+from typing_extensions import Annotated
 from app.models.convocado_input import ConvocadoInput
 try:
     from typing import Self
 except ImportError:
     from typing_extensions import Self
 
-class Busqueda(BaseModel):
+class UnirseAmistosoInput(BaseModel):
     """
-    Busqueda
+    UnirseAmistosoInput
     """ # noqa: E501
-    id: Optional[UUID] = None
-    club_id: Optional[UUID] = None
-    jugadores: Optional[List[ConvocadoInput]] = None
-    estado: Optional[StrictStr] = None
-    partido_id: Optional[UUID] = None
-    __properties: ClassVar[List[str]] = ["id", "club_id", "jugadores", "estado", "partido_id"]
-
-    @field_validator('estado')
-    def estado_validate_enum(cls, value):
-        """Validates the enum"""
-        if value is None:
-            return value
-
-        if value not in ('buscando', 'emparejado', 'cancelada',):
-            raise ValueError("must be one of enum values ('buscando', 'emparejado', 'cancelada')")
-        return value
+    password: Optional[StrictStr] = Field(default=None, description="Requerido si el amistoso es privado.")
+    jugadores: Annotated[List[ConvocadoInput], Field(min_length=6, max_length=6)] = Field(description="Exactamente 3 con es_titular en true y 3 en false.")
+    __properties: ClassVar[List[str]] = ["password", "jugadores"]
 
     model_config = {
         "populate_by_name": True,
@@ -68,7 +55,7 @@ class Busqueda(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:
-        """Create an instance of Busqueda from a JSON string"""
+        """Create an instance of UnirseAmistosoInput from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -94,16 +81,11 @@ class Busqueda(BaseModel):
                 if _item:
                     _items.append(_item.to_dict())
             _dict['jugadores'] = _items
-        # set to None if partido_id (nullable) is None
-        # and model_fields_set contains the field
-        if self.partido_id is None and "partido_id" in self.model_fields_set:
-            _dict['partido_id'] = None
-
         return _dict
 
     @classmethod
     def from_dict(cls, obj: Dict) -> Self:
-        """Create an instance of Busqueda from a dict"""
+        """Create an instance of UnirseAmistosoInput from a dict"""
         if obj is None:
             return None
 
@@ -111,11 +93,8 @@ class Busqueda(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "id": obj.get("id"),
-            "club_id": obj.get("club_id"),
-            "jugadores": [ConvocadoInput.from_dict(_item) for _item in obj.get("jugadores")] if obj.get("jugadores") is not None else None,
-            "estado": obj.get("estado"),
-            "partido_id": obj.get("partido_id")
+            "password": obj.get("password"),
+            "jugadores": [ConvocadoInput.from_dict(_item) for _item in obj.get("jugadores")] if obj.get("jugadores") is not None else None
         })
         return _obj
 

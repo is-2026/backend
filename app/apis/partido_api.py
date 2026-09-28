@@ -40,6 +40,29 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
     importlib.import_module(name)
 
 
+@router.get(
+    "/partidos/{partido_id}",
+    responses={
+        200: {"model": Partido, "description": "Detalle del partido"},
+        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
+        404: {"model": Error, "description": "Recurso no encontrado"},
+    },
+    tags=["Partido"],
+    summary="Obtener detalle de un partido",
+    response_model_by_alias=True,
+)
+async def obtener_partido(
+    partido_id: UUID = Path(..., description=""),
+    token_bearerAuth: TokenModel = Security(
+        get_token_bearerAuth
+    ),
+) -> Partido:
+    """Devuelve la información actualizada de un partido específico, incluyendo su estado y resultado actual."""
+    if not BasePartidoApi.subclasses:
+        raise HTTPException(status_code=500, detail="Not implemented")
+    return await BasePartidoApi.subclasses[0]().obtener_partido(partido_id)
+
+
 @router.post(
     "/partidos/{partido_id}/alineacion",
     responses={

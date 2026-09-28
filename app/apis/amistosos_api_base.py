@@ -2,16 +2,12 @@
 
 from typing import ClassVar, Dict, List, Tuple  # noqa: F401
 
-from pydantic import Field, field_validator
-from typing import Any, List, Optional
-from typing_extensions import Annotated
+from typing import Any, List
 from uuid import UUID
-from app.models.busqueda import Busqueda
-from app.models.crear_busqueda_input import CrearBusquedaInput
-from app.models.crear_desafio_input import CrearDesafioInput
-from app.models.desafio import Desafio
-from app.models.desafio_respuesta_input import DesafioRespuestaInput
+from app.models.amistoso import Amistoso
+from app.models.crear_amistoso_input import CrearAmistosoInput
 from app.models.error import Error
+from app.models.unirse_amistoso_input import UnirseAmistosoInput
 from app.security_api import get_token_bearerAuth
 
 class BaseAmistososApi:
@@ -20,47 +16,33 @@ class BaseAmistososApi:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         BaseAmistososApi.subclasses = BaseAmistososApi.subclasses + (cls,)
-    async def listar_desafios(
+    async def listar_amistosos(
         self,
-        direccion: Annotated[Optional[str], Field(description="Filtra por desafíos enviados o recibidos por el club")],
-    ) -> List[Desafio]:
+    ) -> List[Amistoso]:
+        """Devuelve una lista de amistosos que están esperando rival, incluyendo públicos y privados."""
         ...
 
 
-    async def enviar_desafio(
+    async def crear_amistoso(
         self,
-        crear_desafio_input: CrearDesafioInput,
-    ) -> Desafio:
-        """Incluye el pool de 6 convocados del club retador."""
+        crear_amistoso_input: CrearAmistosoInput,
+    ) -> Amistoso:
+        """Crea un amistoso esperando por un rival. Si se envía password, el amistoso se marca como privado."""
         ...
 
 
-    async def cancelar_desafio(
+    async def unirse_amistoso(
         self,
-        desafio_id: UUID,
+        amistoso_id: UUID,
+        unirse_amistoso_input: UnirseAmistosoInput,
+    ) -> Amistoso:
+        """Se une a un amistoso creado por otro club. Si es privado, requiere la contraseña. Al unirse exitosamente, se genera el partido."""
+        ...
+
+
+    async def cancelar_amistoso(
+        self,
+        amistoso_id: UUID,
     ) -> None:
-        """Solo el club retador puede cancelarlo, y solo si sigue pendiente."""
-        ...
-
-
-    async def responder_desafio(
-        self,
-        desafio_id: UUID,
-        desafio_respuesta_input: DesafioRespuestaInput,
-    ) -> Desafio:
-        """Si se acepta, se debe incluir el pool de 6 convocados del club desafiado, y se crea el partido."""
-        ...
-
-
-    async def iniciar_matchmaking(
-        self,
-        crear_busqueda_input: CrearBusquedaInput,
-    ) -> Busqueda:
-        """Devuelve el ticket nomás. La notificación de emparejamiento exitoso se recibe de forma asíncrona vía WebSocket en el canal &#x60;/ws/amistosos/busqueda&#x60; (ver especificación AsyncAPI, mensaje &#39;PartidoEncontrado&#39;)."""
-        ...
-
-
-    async def cancelar_matchmaking(
-        self,
-    ) -> None:
+        """Solo el club creador puede cancelarlo, y solo si aún no se ha unido ningún rival."""
         ...

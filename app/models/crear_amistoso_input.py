@@ -20,7 +20,7 @@ import json
 
 
 
-from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
 from app.models.convocado_input import ConvocadoInput
@@ -29,20 +29,13 @@ try:
 except ImportError:
     from typing_extensions import Self
 
-class DesafioRespuestaInput(BaseModel):
+class CrearAmistosoInput(BaseModel):
     """
-    DesafioRespuestaInput
+    CrearAmistosoInput
     """ # noqa: E501
-    estado: StrictStr
-    jugadores: Optional[Annotated[List[ConvocadoInput], Field(min_length=6, max_length=6)]] = Field(default=None, description="Requerido si estado es \"aceptado\".")
-    __properties: ClassVar[List[str]] = ["estado", "jugadores"]
-
-    @field_validator('estado')
-    def estado_validate_enum(cls, value):
-        """Validates the enum"""
-        if value not in ('aceptado', 'rechazado',):
-            raise ValueError("must be one of enum values ('aceptado', 'rechazado')")
-        return value
+    password: Optional[StrictStr] = Field(default=None, description="Si se provee, el amistoso será privado.")
+    jugadores: Annotated[List[ConvocadoInput], Field(min_length=6, max_length=6)] = Field(description="Exactamente 3 con es_titular en true y 3 en false.")
+    __properties: ClassVar[List[str]] = ["password", "jugadores"]
 
     model_config = {
         "populate_by_name": True,
@@ -62,7 +55,7 @@ class DesafioRespuestaInput(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:
-        """Create an instance of DesafioRespuestaInput from a JSON string"""
+        """Create an instance of CrearAmistosoInput from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -92,7 +85,7 @@ class DesafioRespuestaInput(BaseModel):
 
     @classmethod
     def from_dict(cls, obj: Dict) -> Self:
-        """Create an instance of DesafioRespuestaInput from a dict"""
+        """Create an instance of CrearAmistosoInput from a dict"""
         if obj is None:
             return None
 
@@ -100,7 +93,7 @@ class DesafioRespuestaInput(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "estado": obj.get("estado"),
+            "password": obj.get("password"),
             "jugadores": [ConvocadoInput.from_dict(_item) for _item in obj.get("jugadores")] if obj.get("jugadores") is not None else None
         })
         return _obj

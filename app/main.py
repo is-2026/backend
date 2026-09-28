@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from app.db.session import check_connection, engine
 
 from app.apis.amistosos_api import router as AmistososApiRouter
-from app.apis.autenticacin_api import router as AutenticacinApiRouter
+from app.apis.autenticacion_api import router as AutenticacionApiRouter
 from app.apis.club_api import router as ClubApiRouter
 from app.apis.comportamientos_api import router as ComportamientosApiRouter
 from app.apis.jugadores_api import router as JugadoresApiRouter
@@ -45,7 +45,7 @@ def root():
     return {"message": "Backend funcionando"}
 
 app.include_router(AmistososApiRouter)
-app.include_router(AutenticacinApiRouter)
+app.include_router(AutenticacionApiRouter)
 app.include_router(ClubApiRouter)
 app.include_router(ComportamientosApiRouter)
 app.include_router(JugadoresApiRouter)

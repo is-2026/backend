@@ -20,21 +20,35 @@ import json
 
 
 
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Any, ClassVar, Dict, List
-from typing_extensions import Annotated
-from app.models.convocado_input import ConvocadoInput
+from pydantic import BaseModel, ConfigDict, StrictBool, StrictStr, field_validator
+from typing import Any, ClassVar, Dict, List, Optional
+from uuid import UUID
 try:
     from typing import Self
 except ImportError:
     from typing_extensions import Self
 
-class CrearBusquedaInput(BaseModel):
+class Amistoso(BaseModel):
     """
-    CrearBusquedaInput
+    Amistoso
     """ # noqa: E501
-    jugadores: Annotated[List[ConvocadoInput], Field(min_length=6, max_length=6)]
-    __properties: ClassVar[List[str]] = ["jugadores"]
+    id: Optional[UUID] = None
+    club_creador_id: Optional[UUID] = None
+    club_rival_id: Optional[UUID] = None
+    es_privado: Optional[StrictBool] = None
+    estado: Optional[StrictStr] = None
+    partido_id: Optional[UUID] = None
+    __properties: ClassVar[List[str]] = ["id", "club_creador_id", "club_rival_id", "es_privado", "estado", "partido_id"]
+
+    @field_validator('estado')
+    def estado_validate_enum(cls, value):
+        """Validates the enum"""
+        if value is None:
+            return value
+
+        if value not in ('esperando_rival', 'aceptado', 'cancelado',):
+            raise ValueError("must be one of enum values ('esperando_rival', 'aceptado', 'cancelado')")
+        return value
 
     model_config = {
         "populate_by_name": True,
@@ -54,7 +68,7 @@ class CrearBusquedaInput(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:
-        """Create an instance of CrearBusquedaInput from a JSON string"""
+        """Create an instance of Amistoso from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -73,18 +87,21 @@ class CrearBusquedaInput(BaseModel):
             },
             exclude_none=True,
         )
-        # override the default output from pydantic by calling `to_dict()` of each item in jugadores (list)
-        _items = []
-        if self.jugadores:
-            for _item in self.jugadores:
-                if _item:
-                    _items.append(_item.to_dict())
-            _dict['jugadores'] = _items
+        # set to None if club_rival_id (nullable) is None
+        # and model_fields_set contains the field
+        if self.club_rival_id is None and "club_rival_id" in self.model_fields_set:
+            _dict['club_rival_id'] = None
+
+        # set to None if partido_id (nullable) is None
+        # and model_fields_set contains the field
+        if self.partido_id is None and "partido_id" in self.model_fields_set:
+            _dict['partido_id'] = None
+
         return _dict
 
     @classmethod
     def from_dict(cls, obj: Dict) -> Self:
-        """Create an instance of CrearBusquedaInput from a dict"""
+        """Create an instance of Amistoso from a dict"""
         if obj is None:
             return None
 
@@ -92,7 +109,12 @@ class CrearBusquedaInput(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "jugadores": [ConvocadoInput.from_dict(_item) for _item in obj.get("jugadores")] if obj.get("jugadores") is not None else None
+            "id": obj.get("id"),
+            "club_creador_id": obj.get("club_creador_id"),
+            "club_rival_id": obj.get("club_rival_id"),
+            "es_privado": obj.get("es_privado"),
+            "estado": obj.get("estado"),
+            "partido_id": obj.get("partido_id")
         })
         return _obj
 
