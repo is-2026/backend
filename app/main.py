@@ -17,6 +17,8 @@ from fastapi import FastAPI
 
 from app.db.session import check_connection, engine
 
+from app.errors import register_exception_handlers
+
 from app.apis.authentication_api import router as AuthenticationApiRouter
 from app.apis.behaviors_api import router as BehaviorsApiRouter
 from app.apis.club_api import router as ClubApiRouter
@@ -39,6 +41,8 @@ app = FastAPI(
     version="1.0.1",
     lifespan=lifespan
 )
+
+register_exception_handlers(app)
 
 @app.get("/")
 def root():
