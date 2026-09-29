@@ -39,6 +39,7 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
 
 @router.post(
     "/auth/register",
+    status_code=status.HTTP_201_CREATED,
     responses={
         201: {"model": AuthResponse, "description": "Usuario registrado exitosamente"},
         400: {"model": Error, "description": "Solicitud inválida"},
