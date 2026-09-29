@@ -45,7 +45,7 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
     summary="Ver ranking global",
     response_model_by_alias=True,
 )
-async def obtener_ranking(
+async def get_ranking(
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
@@ -53,4 +53,4 @@ async def obtener_ranking(
     """Calculado a partir de los partidos jugados en instancias públicas (ligas públicas y amistosos)."""
     if not BaseRankingApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseRankingApi.subclasses[0]().obtener_ranking()
+    return await BaseRankingApi.subclasses[0]().get_ranking()

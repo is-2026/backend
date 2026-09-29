@@ -24,12 +24,12 @@ from fastapi import (  # noqa: F401
 
 from typing import List
 from uuid import UUID
-from app.models.cambiar_avatar_input import CambiarAvatarInput
-from app.models.cambiar_formacion_default_input import CambiarFormacionDefaultInput
+from app.models.change_avatar_input import ChangeAvatarInput
+from app.models.change_default_formation_input import ChangeDefaultFormationInput
 from app.models.club import Club
-from app.models.crear_club_input import CrearClubInput
+from app.models.create_club_input import CreateClubInput
 from app.models.error import Error
-from app.models.historial_item import HistorialItem
+from app.models.history_item import HistoryItem
 from app.models.extra_models import TokenModel  # noqa: F401
 from app.security_api import get_token_bearerAuth
 
@@ -50,7 +50,7 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
     summary="Obtener mi club",
     response_model_by_alias=True,
 )
-async def obtener_mi_club(
+async def get_my_club(
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
@@ -58,7 +58,7 @@ async def obtener_mi_club(
     """Identifica al club mediante el token de sesión."""
     if not BaseClubApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseClubApi.subclasses[0]().obtener_mi_club()
+    return await BaseClubApi.subclasses[0]().get_my_club()
 
 
 @router.post(
@@ -73,15 +73,15 @@ async def obtener_mi_club(
     summary="Crear club (segundo paso del registro)",
     response_model_by_alias=True,
 )
-async def crear_club(
-    crear_club_input: CrearClubInput = Body(..., description=""),
+async def create_club(
+    create_club_input: CreateClubInput = Body(..., description=""),
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
 ) -> Club:
     if not BaseClubApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseClubApi.subclasses[0]().crear_club(crear_club_input)
+    return await BaseClubApi.subclasses[0]().create_club(create_club_input)
 
 
 @router.patch(
@@ -94,19 +94,19 @@ async def crear_club(
     summary="Cambiar avatar del club",
     response_model_by_alias=True,
 )
-async def cambiar_avatar(
-    cambiar_avatar_input: CambiarAvatarInput = Body(..., description=""),
+async def change_avatar(
+    change_avatar_input: ChangeAvatarInput = Body(..., description=""),
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
 ) -> Club:
     if not BaseClubApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseClubApi.subclasses[0]().cambiar_avatar(cambiar_avatar_input)
+    return await BaseClubApi.subclasses[0]().change_avatar(change_avatar_input)
 
 
 @router.patch(
-    "/club/formacion",
+    "/club/formation",
     responses={
         200: {"model": Club, "description": "Formación default actualizada"},
         401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
@@ -115,41 +115,41 @@ async def cambiar_avatar(
     summary="Cambiar formación default del club",
     response_model_by_alias=True,
 )
-async def cambiar_formacion_default(
-    cambiar_formacion_default_input: CambiarFormacionDefaultInput = Body(..., description=""),
+async def change_default_formation(
+    change_default_formation_input: ChangeDefaultFormationInput = Body(..., description=""),
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
 ) -> Club:
     if not BaseClubApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseClubApi.subclasses[0]().cambiar_formacion_default(cambiar_formacion_default_input)
+    return await BaseClubApi.subclasses[0]().change_default_formation(change_default_formation_input)
 
 
 @router.get(
-    "/club/historial",
+    "/club/history",
     responses={
-        200: {"model": List[HistorialItem], "description": "Historial de partidos jugados"},
+        200: {"model": List[HistoryItem], "description": "Historial de partidos jugados"},
         401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
     },
     tags=["Club"],
     summary="Ver historial de partidos de mi club",
     response_model_by_alias=True,
 )
-async def obtener_mi_historial(
+async def get_my_history(
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
-) -> List[HistorialItem]:
+) -> List[HistoryItem]:
     if not BaseClubApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseClubApi.subclasses[0]().obtener_mi_historial()
+    return await BaseClubApi.subclasses[0]().get_my_history()
 
 
 @router.get(
-    "/clubes/{club_id}/historial",
+    "/clubs/{club_id}/history",
     responses={
-        200: {"model": List[HistorialItem], "description": "Historial de partidos entre ambos clubes"},
+        200: {"model": List[HistoryItem], "description": "Historial de partidos entre ambos clubes"},
         400: {"model": Error, "description": "No se puede consultar el historial compartido con el propio club"},
         401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
         404: {"model": Error, "description": "Recurso no encontrado"},
@@ -158,20 +158,20 @@ async def obtener_mi_historial(
     summary="Ver historial compartido con otro club",
     response_model_by_alias=True,
 )
-async def obtener_historial_compartido(
+async def get_shared_history(
     club_id: UUID = Path(..., description=""),
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
-) -> List[HistorialItem]:
+) -> List[HistoryItem]:
     """Historial de partidos jugados entre el club del usuario autenticado y el club indicado."""
     if not BaseClubApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseClubApi.subclasses[0]().obtener_historial_compartido(club_id)
+    return await BaseClubApi.subclasses[0]().get_shared_history(club_id)
 
 
 @router.get(
-    "/clubes/{club_id}",
+    "/clubs/{club_id}",
     responses={
         200: {"model": Club, "description": "Datos públicos del club"},
         401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
@@ -181,7 +181,7 @@ async def obtener_historial_compartido(
     summary="Ver club de un usuario",
     response_model_by_alias=True,
 )
-async def obtener_club(
+async def get_club(
     club_id: UUID = Path(..., description=""),
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
@@ -189,4 +189,4 @@ async def obtener_club(
 ) -> Club:
     if not BaseClubApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseClubApi.subclasses[0]().obtener_club(club_id)
+    return await BaseClubApi.subclasses[0]().get_club(club_id)
