@@ -13,7 +13,7 @@ class BaseRankingApi:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         BaseRankingApi.subclasses = BaseRankingApi.subclasses + (cls,)
-    async def obtener_ranking(
+    async def get_ranking(
         self,
     ) -> List[RankingItem]:
         """Calculado a partir de los partidos jugados en instancias públicas (ligas públicas y amistosos)."""
