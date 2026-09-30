@@ -13,9 +13,6 @@ from app.main import app
 
 TEST_DATABASE = "futbot_test"
 
-# TODO: usar todo Base.metadata cuando exista ClubDB (players.club_id -> clubs.id)
-TABLES = [UserDB.__table__]
-
 
 @pytest.fixture(scope="session", autouse=True)
 def crear_base_de_test():
@@ -39,12 +36,12 @@ async def session_factory():
     url = build_database_url().set(database=TEST_DATABASE)
     engine = create_async_engine(url, poolclass=NullPool)
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all, tables=TABLES)
+        await conn.run_sync(Base.metadata.create_all)
 
     yield async_sessionmaker(engine, expire_on_commit=False)
 
     async with engine.begin() as conn:
-        for table in reversed(TABLES):
+        for table in reversed(Base.metadata.sorted_tables):
             await conn.execute(table.delete())
     await engine.dispose()
 
