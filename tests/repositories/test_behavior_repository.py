@@ -6,6 +6,86 @@ from app.db.club import ClubDB
 from app.db.user import UserDB
 from app.repositories.behavior_repository import BehaviorRepository
 
+# -- TESTS list_by_club --
+async def test_list_by_club_exitoso(session):
+    # 1. Creo primero el Usuario
+    user_id = uuid.uuid4()
+    user_db = UserDB(
+        id=user_id,
+        email="test@example.com",
+        hashed_password="password123"
+    )
+    session.add(user_db)
+    await session.commit()
+
+    # 2. Creo el Club
+    club_id = uuid.uuid4()
+    club_db = ClubDB(
+        id=club_id,
+        club_name="Club de Prueba",
+        avatar_url="https://example.com/avatar.png",
+        user_id=user_id
+    )
+    session.add(club_db)
+    await session.commit()
+
+    # pruebo club sin comportamientos
+    consult_repo = BehaviorRepository(session)
+    result = await consult_repo.list_by_club(club_id)
+    assert result is not None
+    assert result == []
+
+    # 3. Creo varios comportamientos de prueba
+    behavior_id1 = uuid.uuid4()
+    behavior_id2 = uuid.uuid4()   
+    behavior_id3 = uuid.uuid4()
+    
+    behavior_db1 = BehaviorDB(
+            id = behavior_id1,
+            name= "comportamiento1",
+            code= "def run(): running",
+            club_id= club_id
+    )
+    behavior_db2 = BehaviorDB(
+                id = behavior_id2,
+                name= "comportamiento2",
+                code= "def run(): running",
+                club_id= club_id
+    )
+    behavior_db3 = BehaviorDB(
+                id = behavior_id3,
+                name= "comportamiento3",
+                code= "def run(): running",
+                club_id= club_id
+    )
+
+    # pruebo club con comportamientos
+    session.add(behavior_db1)
+    session.add(behavior_db2)
+    session.add(behavior_db3)
+    await session.commit()
+
+    result = await consult_repo.list_by_club(club_id)
+
+    # compruebo que result sea list[BehaviorDB]
+    assert result is not None
+    assert isinstance(result, list)
+    assert len(result) == 3
+    assert isinstance(result[0], BehaviorDB)
+
+    # comprueba que los comportamientos sean los correctos
+    assert result[0].club_id == result[1].club_id == result[2].club_id == club_id
+    assert result[0].id == behavior_id1
+    assert result[1].id == behavior_id2
+    assert result[2].id == behavior_id3
+
+async def test_list_by_club_club_id_no_existe(session):
+    consult_repo = BehaviorRepository(session)
+    result = await consult_repo.list_by_club(uuid.uuid4())
+    assert result == []
+
+
+# -- TESTS get_id_and_club --
 async def test_get_id_and_club_exitoso(session):
    # 1. Crear primero el Usuario (necesario por la FK user_id de ClubDB)
     user_id = uuid.uuid4()
