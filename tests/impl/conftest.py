@@ -9,12 +9,14 @@ from sqlalchemy.pool import NullPool
 from app.db.base import Base
 from app.db.session import build_database_url, get_session
 from app.db.user import UserDB
+from app.db.behavior import BehaviorDB
+from app.db.club import ClubDB
 from app.main import app
 
 TEST_DATABASE = "futbot_test"
 
 # TODO: usar todo Base.metadata cuando exista ClubDB (players.club_id -> clubs.id)
-TABLES = [UserDB.__table__]
+TABLES = [UserDB.__table__, BehaviorDB.__table__, ClubDB.__table__]
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -44,9 +46,9 @@ async def session_factory():
     yield async_sessionmaker(engine, expire_on_commit=False)
 
     async with engine.begin() as conn:
-        for table in reversed(TABLES):
+        for table in reversed(Base.metadata.sorted_tables):
             await conn.execute(table.delete())
-    await engine.dispose()
+    await conn.commit()
 
 
 @pytest.fixture
