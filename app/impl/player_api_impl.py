@@ -55,4 +55,3 @@ class PlayerApiImpl(BasePlayersApi):
                 speed=player.speed,
                 strength=player.strength,
             )
-
