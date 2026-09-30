@@ -46,8 +46,9 @@ async def session_factory():
     yield async_sessionmaker(engine, expire_on_commit=False)
 
     async with engine.begin() as conn:
-        for table in reversed(TABLES):
-            await conn.execute(table.delete())
+        for table in reversed(Base.metadata.sorted_tables):
+            if table in TABLES:
+                await conn.execute(table.delete())
     await engine.dispose()
 
 
