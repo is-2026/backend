@@ -29,6 +29,9 @@ from app.models.error import Error
 from app.models.player import Player
 from app.models.extra_models import TokenModel  # noqa: F401
 from app.security_api import get_token_bearerAuth
+from app.db.club import ClubDB
+from app.dependencies import get_current_club
+
 
 router = APIRouter()
 
@@ -59,6 +62,7 @@ async def list_my_players(
 
 @router.post(
     "/club/players",
+    status_code=status.HTTP_201_CREATED
     responses={
         201: {"model": Player, "description": "Jugador creado exitosamente"},
         400: {"model": Error, "description": "El número de camiseta de jugdor está fuera de rango (1-99), la suma de los PACSS no es 300, o alguno está fuera de rango (20-100)"},
@@ -71,14 +75,12 @@ async def list_my_players(
 )
 async def create_player(
     create_player_input: CreatePlayerInput = Body(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    club: ClubDB = Security(get_current_club),
 ) -> Player:
     """Crea un nuevo jugador en el club del usuario. Notar que la suma de sus PACSS debe ser exactamente 300."""
     if not BasePlayersApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BasePlayersApi.subclasses[0]().create_player(create_player_input)
+    return await BasePlayersApi.subclasses[0]().create_player(create_player_input, club.id)
 
 
 @router.get(

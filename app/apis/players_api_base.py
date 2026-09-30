@@ -24,6 +24,7 @@ class BasePlayersApi:
     async def create_player(
         self,
         create_player_input: CreatePlayerInput,
+        club_id : UUID
     ) -> Player:
         """Crea un nuevo jugador en el club del usuario. Notar que la suma de sus PACSS debe ser exactamente 300."""
         ...
