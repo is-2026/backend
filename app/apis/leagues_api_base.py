@@ -77,7 +77,7 @@ class BaseLeaguesApi:
         self,
         league_id: UUID,
     ) -> LeagueDetail:
-        """Solo el creador puede iniciarla. Cambia el estado a \&quot;started\&quot; y genera el fixture."""
+        """Solo el creador puede iniciarla. Cambia el estado a started y genera el fixture."""
         ...
 
 
