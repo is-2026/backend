@@ -10,7 +10,7 @@ class BehaviorDB(Base):
 
     # el nombre del comportamiento es unico por club
     __table_args__ = (
-        UniqueConstraint("club_id", "name", name="uq_behavior_club_id_number"),
+        UniqueConstraint("club_id", "name", name="uq_behavior_club_id_name"),
     )
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, 
