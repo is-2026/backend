@@ -32,6 +32,8 @@ from app.models.error import Error
 from app.models.history_item import HistoryItem
 from app.models.extra_models import TokenModel  # noqa: F401
 from app.security_api import get_token_bearerAuth
+from app.db.session import get_session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -63,6 +65,7 @@ async def get_my_club(
 
 @router.post(
     "/club",
+    status_code=status.HTTP_201_CREATED,
     responses={
         201: {"model": Club, "description": "Club creado"},
         400: {"model": Error, "description": "Falta alguno de los dos campos o las entradas son inválidas."},
@@ -78,10 +81,12 @@ async def create_club(
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
+    session: AsyncSession = Depends(get_session),
 ) -> Club:
     if not BaseClubApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseClubApi.subclasses[0]().create_club(create_club_input)
+    user_id = UUID(token_bearerAuth.sub)
+    return await BaseClubApi.subclasses[0](session, user_id).create_club(create_club_input)
 
 
 @router.patch(
