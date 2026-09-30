@@ -9,6 +9,56 @@ from app.impl.behavior_api_impl import BehaviorApiImpl
 
 
 @patch("app.impl.behavior_api_impl.BehaviorRepository")
+async def test_list_behaviors_return_list(
+    mocked_repo_class
+):
+    club_id = uuid.uuid4()
+    
+    # Creamos instancias mockeadas simulando lo que devuelve la BD
+    behavior_1 = BehaviorDB(
+        id=uuid.uuid4(), name="Correr", code="def run(): pass", club_id=club_id
+    )
+    behavior_2 = BehaviorDB(
+        id=uuid.uuid4(), name="Saltar", code="def jump(): pass", club_id=club_id
+    )
+
+    # Configuramos el mock del repositorio para que devuelva la lista
+    mocked_repo = MagicMock()
+    mocked_repo.list_by_club = AsyncMock(return_value=[behavior_1, behavior_2])
+    mocked_repo_class.return_value = mocked_repo
+
+    # Instanciamos la API y llamamos al método con el club_id
+    result = await BehaviorApiImpl(MagicMock()).list_behaviors(club_id)
+
+    # Aserciones
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert result[0].name == "Correr"
+    assert result[1].name == "Saltar"
+    
+    # Verificamos que al repositorio le llegó el club_id correcto
+    mocked_repo.list_by_club.assert_awaited_once_with(club_id)
+
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
+async def test_list_behaviors_return_empty(
+    mocked_repo_class
+):
+    club_id = uuid.uuid4()
+
+    # Configuramos el mock para que devuelva una lista vacía (sin resultados)
+    mocked_repo = MagicMock()
+    mocked_repo.list_by_club = AsyncMock(return_value=[])
+    mocked_repo_class.return_value = mocked_repo
+
+    result = await BehaviorApiImpl(MagicMock()).list_behaviors(club_id)
+
+    # La aserción debe esperar exactamente una lista vacía
+    assert result == []
+    
+    # Verificamos que la llamada al repositorio haya sido correcta
+    mocked_repo.list_by_club.assert_awaited_once_with(club_id)
+
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
 async def test_get_behavior_return_behavior(
     mocked_repo_class
 ):

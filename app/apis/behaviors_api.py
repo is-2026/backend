@@ -52,14 +52,12 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
     response_model_by_alias=True,
 )
 async def list_behaviors(
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    club: ClubDB = Security(get_current_club),
     session: AsyncSession = Depends(get_session),
 ) -> List[Behavior]:
     if not BaseBehaviorsApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseBehaviorsApi.subclasses[0](session).list_behaviors()
+    return await BaseBehaviorsApi.subclasses[0](session).list_behaviors(club.id)
 
 
 @router.post(

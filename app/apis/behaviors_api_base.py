@@ -17,6 +17,7 @@ class BaseBehaviorsApi:
         BaseBehaviorsApi.subclasses = BaseBehaviorsApi.subclasses + (cls,)
     async def list_behaviors(
         self,
+        club_id: UUID
     ) -> List[Behavior]:
         ...
 
