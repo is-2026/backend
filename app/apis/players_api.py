@@ -62,7 +62,7 @@ async def list_my_players(
 
 @router.post(
     "/club/players",
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
     responses={
         201: {"model": Player, "description": "Jugador creado exitosamente"},
         400: {"model": Error, "description": "El número de camiseta de jugdor está fuera de rango (1-99), la suma de los PACSS no es 300, o alguno está fuera de rango (20-100)"},
