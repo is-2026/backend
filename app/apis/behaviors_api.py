@@ -53,11 +53,11 @@ async def list_behaviors(
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
-    #session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session),
 ) -> List[Behavior]:
     if not BaseBehaviorsApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseBehaviorsApi.subclasses[0]().list_behaviors()
+    return await BaseBehaviorsApi.subclasses[0](session).list_behaviors()
 
 
 @router.post(
