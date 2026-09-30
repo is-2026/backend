@@ -29,6 +29,8 @@ from app.models.error import Error
 from app.models.user_register_input import UserRegisterInput
 from app.models.extra_models import TokenModel  # noqa: F401
 from app.security_api import get_token_bearerAuth
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.session import get_session
 
 router = APIRouter()
 
@@ -51,11 +53,12 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
 )
 async def register_user(
     user_register_input: UserRegisterInput = Body(..., description=""),
+    session: AsyncSession = Depends(get_session),
 ) -> AuthResponse:
     """Crea la cuenta de usuario. El club se crea en un paso separado (POST /club) inmediatamente después, dentro del mismo flujo de onboarding del cliente."""
     if not BaseAuthenticationApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseAuthenticationApi.subclasses[0]().register_user(user_register_input)
+    return await BaseAuthenticationApi.subclasses[0](session).register_user(user_register_input)
 
 
 @router.post(
