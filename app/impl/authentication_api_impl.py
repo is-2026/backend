@@ -24,7 +24,7 @@ def _normalize_email(raw: str) -> str:
 
 
 def _validate_password(password: str) -> None:
-    if not PASSWORD_MAX_LENGTH <= len(password) <= PASSWORD_MAX_LENGTH:
+    if not PASSWORD_MIN_LENGTH <= len(password) <= PASSWORD_MAX_LENGTH:
         raise HTTPException(
             status_code=400,
             detail=(
@@ -46,4 +46,4 @@ class AutenticacionApiImpl(BaseAuthenticationApi):
                 user = await UserRepository(session).create(normalized_email, hashed)
             except EmailExists as e:
                 raise HTTPException(status_code=409, detail="Email ya registrado") from e
-        return AuthResponse(create_access_token(user.id))
+        return AuthResponse(token=create_access_token(user.id))
