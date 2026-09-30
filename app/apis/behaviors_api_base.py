@@ -31,6 +31,7 @@ class BaseBehaviorsApi:
     async def get_behavior(
         self,
         behavior_id: UUID,
+        club_id: UUID
     ) -> Behavior:
         ...
 

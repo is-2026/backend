@@ -9,6 +9,8 @@ from sqlalchemy.pool import NullPool
 from app.db.base import Base
 from app.db.session import build_database_url, get_session
 from app.db.user import UserDB
+from app.db.behavior import BehaviorDB
+from app.db.club import ClubDB
 from app.main import app
 
 TEST_DATABASE = "futbot_test"

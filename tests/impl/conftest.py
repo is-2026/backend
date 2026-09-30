@@ -9,6 +9,8 @@ from sqlalchemy.pool import NullPool
 from app.db.base import Base
 from app.db.session import build_database_url, get_session
 from app.db.user import UserDB
+from app.db.behavior import BehaviorDB
+from app.db.club import ClubDB
 from app.main import app
 
 TEST_DATABASE = "futbot_test"
@@ -43,7 +45,7 @@ async def session_factory():
     async with engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
             await conn.execute(table.delete())
-    await engine.dispose()
+    await conn.commit()
 
 
 @pytest.fixture

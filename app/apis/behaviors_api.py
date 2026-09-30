@@ -29,6 +29,10 @@ from app.models.create_behavior_input import CreateBehaviorInput
 from app.models.error import Error
 from app.models.extra_models import TokenModel  # noqa: F401
 from app.security_api import get_token_bearerAuth
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.session import get_session
+from app.db.club import ClubDB
+from app.dependencies import get_current_club
 
 router = APIRouter()
 
@@ -51,10 +55,11 @@ async def list_behaviors(
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
+    session: AsyncSession = Depends(get_session),
 ) -> List[Behavior]:
     if not BaseBehaviorsApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseBehaviorsApi.subclasses[0]().list_behaviors()
+    return await BaseBehaviorsApi.subclasses[0](session).list_behaviors()
 
 
 @router.post(
@@ -93,13 +98,12 @@ async def create_behavior(
 )
 async def get_behavior(
     behavior_id: UUID = Path(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
 ) -> Behavior:
     if not BaseBehaviorsApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseBehaviorsApi.subclasses[0]().get_behavior(behavior_id)
+    return await BaseBehaviorsApi.subclasses[0](session).get_behavior(behavior_id, club.id)
 
 
 @router.put(
