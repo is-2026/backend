@@ -1,17 +1,14 @@
 import uuid
-from typing import NamedTuple
+
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.behaviors.defaults import DefaultBehaviorData
 from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
-
-
-class DefaultBehaviorData(NamedTuple):
-    name: str
-    code: str
 
 
 class ClubAlreadyExists(Exception):
@@ -27,7 +24,7 @@ class ClubRepository:
         user_id: uuid.UUID,
         club_name: str,
         avatar_url: str,
-        behaviors: list[DefaultBehaviorData],
+        behaviors: Sequence[DefaultBehaviorData],
     ) -> ClubDB:
         club = ClubDB(
             id=uuid.uuid4(), club_name=club_name, avatar_url=avatar_url, user_id=user_id

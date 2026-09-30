@@ -1,13 +1,13 @@
 import pytest
 from sqlalchemy import func, select
 
+from app.behaviors.defaults import DefaultBehaviorData
 from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
 from app.db.user import UserDB
 from app.repositories.club_repository import (
     ClubAlreadyExists,
     ClubRepository,
-    DefaultBehaviorData,
 )
 
 CLUB_NAME = "Instituto"
