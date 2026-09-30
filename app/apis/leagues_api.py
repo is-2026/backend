@@ -223,7 +223,7 @@ async def start_league(
         get_token_bearerAuth
     ),
 ) -> LeagueDetail:
-    """Solo el creador puede iniciarla. Cambia el estado a \&quot;started\&quot; y genera el fixture."""
+    """Solo el creador puede iniciarla. Cambia el estado a started y genera el fixture."""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
     return await BaseLeaguesApi.subclasses[0]().start_league(league_id)
