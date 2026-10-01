@@ -2,7 +2,14 @@ import random
 from math import hypot
 
 from app.engine.actions import Action, Move, PassTo, Shoot, ShootAtGoal
-from app.engine.constants import ATTR_MAX, ATTR_MIN, DT, SPEED_MAX_RANGE
+from app.engine.constants import (
+    ATTR_MAX,
+    ATTR_MIN,
+    DT,
+    FIELD_HALF_LENGTH,
+    FIELD_HALF_WIDTH,
+    SPEED_MAX_RANGE,
+)
 from app.engine.events import GoalEvent
 from app.engine.state import MatchState
 
@@ -12,6 +19,10 @@ def _scale(attr: int, value_range: tuple[float, float]) -> float:
     low, high = value_range
     t = (attr - ATTR_MIN) / (ATTR_MAX - ATTR_MIN)
     return low + t * (high - low)
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(value, high))
 
 
 def _reset_positions(state: MatchState) -> None:
@@ -48,9 +59,11 @@ def step(
         if isinstance(action, Move):
             x_normalized, y_normalized = _normalize_vector(action.dx, action.dy)
             max_speed = _scale(player.speed, SPEED_MAX_RANGE)
-            pct = action.speed_pct / 100
+            pct = _clamp(action.speed_pct, 0, 100) / 100
             player.x += x_normalized * pct * max_speed * DT
+            player.x = _clamp(player.x, -FIELD_HALF_LENGTH, FIELD_HALF_LENGTH)
             player.y += y_normalized * pct * max_speed * DT
+            player.y = _clamp(player.y, -FIELD_HALF_WIDTH, FIELD_HALF_WIDTH)
     state.tick += 1
 
     return events
