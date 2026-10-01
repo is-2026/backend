@@ -1,5 +1,6 @@
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,3 +26,9 @@ class UserRepository:
             await self._session.rollback()
             raise EmailExists(email) from e
         return user
+
+    async def get_by_email(self, email: str) -> UserDB | None:
+        result = await self._session.execute(
+            select(UserDB).where(UserDB.email == email)
+        )
+        return result.scalar_one_or_none()
