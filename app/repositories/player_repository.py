@@ -44,5 +44,18 @@ class PlayerRepository:
             await self.session.rollback() #hace un rollback a la session para "limpiarla" y poder seguir usandola
             raise JerseyNumberUsed(number) from dep #Lanzo la excepcion 
 
-        return player
         
+
+    async def count_club_players(
+        self,
+        club_id: uuid.UUID,
+        player_ids: list[uuid.UUID],
+    ) -> int:
+        # cuenta cuántos de esos ids existen Y son de este club
+        result = await self.session.execute(
+            select(func.count())
+            .select_from(PlayerDB)
+            .where(PlayerDB.club_id == club_id, PlayerDB.id.in_(player_ids))
+        )
+        return result.scalar_one()
+    

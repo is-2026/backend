@@ -30,6 +30,10 @@ from app.models.friendly import Friendly
 from app.models.join_friendly_input import JoinFriendlyInput
 from app.models.extra_models import TokenModel  # noqa: F401
 from app.security_api import get_token_bearerAuth
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.session import get_session
+from app.db.club import ClubDB
+from app.dependencies import get_current_club
 
 router = APIRouter()
 
@@ -72,9 +76,8 @@ async def list_friendlies(
 )
 async def create_friendly(
     create_friendly_input: CreateFriendlyInput = Body(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
 ) -> Friendly:
     """Crea un amistoso esperando por un rival. Si se envía password, el amistoso se marca como privado."""
     if not BaseFriendliesApi.subclasses:
