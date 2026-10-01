@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class Side(Enum, str): # con str para que sea más fácil serializar
+class Side(StrEnum):  # con StrEnum para que sea más fácil serializar
     HOME = "home"
     AWAY = "away"
 
