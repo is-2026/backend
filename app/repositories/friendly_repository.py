@@ -1,12 +1,11 @@
 import uuid
 
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import NamedTuple
 
 from app.db.friendly import FriendlyDB, FriendlyPlayerDB
 
-from typing import NamedTuple
 
 class SquadPlayerData(NamedTuple):
     player_id : uuid.UUID
@@ -14,7 +13,7 @@ class SquadPlayerData(NamedTuple):
     behavior_id : uuid.UUID | None
 
 class InvalidSquad(Exception):
-    """Se detectaron jugadores repetidos"""
+    """La convocatoria no es valida (jugadores repetidos/inexistentes)"""
 
 class FriendlyRepository:
     def __init__(self, session : AsyncSession) -> None:
