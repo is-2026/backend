@@ -2,9 +2,8 @@ import random
 
 import pytest
 
-from app.engine.state import MatchState, PlayerState, Side
-
 from app.engine.constants import TRIANGLE_HOME
+from app.engine.state import MatchState, PlayerState, Side
 
 
 def make_player(
