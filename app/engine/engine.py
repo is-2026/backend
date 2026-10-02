@@ -21,7 +21,7 @@ from app.engine.constants import (
     TRIANGLE_HOME,
 )
 from app.engine.events import GoalEvent
-from app.engine.state import MatchState, Side, Formation
+from app.engine.state import MatchState, Side
 
 
 def _scale(attr: int, value_range: tuple[float, float]) -> float:
@@ -78,19 +78,26 @@ def _move_players(state: MatchState, actions: dict[str, Action]) -> None:
             player.y = _clamp(player.y, -FIELD_HALF_WIDTH, FIELD_HALF_WIDTH)
 
 
+def _ball_in_goal(state: MatchState) -> bool:
+    """La pelota entró en el arco."""
+    ball = state.ball
+    return abs(ball.x) >= FIELD_HALF_LENGTH and abs(ball.y) <= GOAL_HALF_WIDTH
+
+
 def _move_ball(state: MatchState) -> None:
     ball = state.ball
-    # movemos la pelota en la velocidad guardada
+    # primero avanza en los dos ejes para saber si entró al arco
     ball.x += ball.vx * DT
-    # si toca con el borde derecho/izquierdo
-    if abs(ball.x) >= FIELD_HALF_LENGTH:
-        # le pongo la pos x del borde donde choco
-        ball.x = copysign(FIELD_HALF_LENGTH, ball.x)
-        # invierto el componente de velocidad en x
-        ball.vx = copysign(ball.vx * BALL_BOUNCE, -ball.x)
-
     ball.y += ball.vy * DT
-    # si choca con el borde de arriba/abajo
+
+    # si entró al arco no rebota
+    if _ball_in_goal(state):
+        return
+
+    # rebote: se pega al borde y la velocidad queda apuntando hacia adentro
+    if abs(ball.x) >= FIELD_HALF_LENGTH:
+        ball.x = copysign(FIELD_HALF_LENGTH, ball.x)
+        ball.vx = copysign(ball.vx * BALL_BOUNCE, -ball.x)
     if abs(ball.y) >= FIELD_HALF_WIDTH:
         ball.y = copysign(FIELD_HALF_WIDTH, ball.y)
         ball.vy = copysign(ball.vy * BALL_BOUNCE, -ball.y)
@@ -103,24 +110,48 @@ def _move_ball(state: MatchState) -> None:
         ball.vy = 0.0
 
 
+def _check_goal(state: MatchState) -> GoalEvent | None:
+    """Si la pelota entró en un arco: suma el gol, arma el evento y reinicia."""
+    if not _ball_in_goal(state):
+        return None
+
+    # el local ataca hacia +x. si entró en el arco de la derecha, es gol del local
+    if state.ball.x > 0:
+        state.home_score += 1
+        team_id = state.home_team_id
+    else:
+        state.away_score += 1
+        team_id = state.away_team_id
+
+    event = GoalEvent(
+        tick=state.tick,
+        # el último que la tocó, aunque sea gol en contra
+        player_id=state.ball.last_touch_id,
+        team_id=team_id,
+        minute=state.tick // TICKS_PER_MINUTE,
+    )
+    _reset_positions(state)
+    return event
+
+
 def step(
     state: MatchState,
     actions: dict[str, Action],
     rng: random.Random,
 ) -> list[GoalEvent]:
     """Avanza la simulación un tick. Modifica `state` y devuelve los eventos.
-
-    `actions` va de player_id a la acción de ese jugador; si un jugador no
-    está en el dict, no hizo nada en este tick.
+    `actions` va de player_id a la acción de ese jugador.
+    si un jugador no está en el dict, no hizo nada en este tick.
     """
     events: list[GoalEvent] = []
-    # 1. mover jugadores
     _move_players(state, actions)
-    # 2. mover la pelota: fricción, rebote y gol
     _move_ball(state)
-    # 3. bajar cooldowns y avanzar el tick
-    # 4. resolver golpear a la pelota? pensar
 
+    goal = _check_goal(state)
+    if goal is not None:
+        events.append(goal)
+
+    # TODO: bajar cooldowns
     state.tick += 1
 
     return events
