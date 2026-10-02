@@ -21,7 +21,7 @@ from app.engine.constants import (
     TICKS_PER_SECOND,
     TRIANGLE_HOME,
 )
-from app.engine.engine import _reset_positions, _scale, step
+from app.engine.engine import _reset_positions, _scale, kickoff, step
 
 # velocidad de una pelota que pegó a 10 m/s: rebota y después frena (= 7.6)
 BOUNCED_SPEED = 10.0 * BALL_BOUNCE * BALL_FRICTION
@@ -239,3 +239,21 @@ def test_ball_hits_outside_the_post_is_not_goal(state, rng):
     assert events == []
     assert (state.home_score, state.away_score) == (0, 0)
     assert ball.vx < 0  # rebotó
+
+
+def test_kickoff_leaves_match_ready_to_start(state):
+    for player in state.players:
+        player.x, player.y = 7.0, 7.0
+    state.ball.x, state.ball.vx = 3.0, 10.0
+    state.tick = 500
+    state.home_score, state.away_score = 2, 1
+
+    kickoff(state)
+
+    home = [p for p in state.players if p.side == "home"]
+    away = [p for p in state.players if p.side == "away"]
+    assert [(p.x, p.y) for p in home] == list(TRIANGLE_HOME)
+    assert [(p.x, p.y) for p in away] == [(-x, -y) for x, y in TRIANGLE_HOME]
+    assert (state.ball.x, state.ball.y, state.ball.vx, state.ball.vy) == (0, 0, 0, 0)
+    assert state.tick == 0
+    assert (state.home_score, state.away_score) == (0, 0)
