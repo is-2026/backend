@@ -32,10 +32,16 @@ class BallState:
     last_touch_id: str | None = None  # para atribuir el gol
 
 
+Position = tuple[float, float]
+Formation = tuple[Position, Position, Position]
+
+
 @dataclass
 class MatchState:
     home_team_id: str
+    home_formation: Formation
     away_team_id: str
+    away_formation: Formation
     players: list[PlayerState]
     total_ticks: int
     ball: BallState = field(default_factory=BallState)

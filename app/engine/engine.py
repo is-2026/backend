@@ -1,5 +1,5 @@
 import random
-from math import hypot, copysign
+from math import copysign, hypot
 
 from app.engine.actions import Action, Move, PassTo, Shoot, ShootAtGoal
 from app.engine.constants import (
@@ -21,7 +21,7 @@ from app.engine.constants import (
     TRIANGLE_HOME,
 )
 from app.engine.events import GoalEvent
-from app.engine.state import MatchState
+from app.engine.state import MatchState, Side, Formation
 
 
 def _scale(attr: int, value_range: tuple[float, float]) -> float:
@@ -35,9 +35,25 @@ def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(value, high))
 
 
-def _reset_positions(state: MatchState) -> None:
+def _reset_positions(
+    state: MatchState,
+) -> None:
     """Jugadores vuelven a la formación inicial y la pelota al centro."""
-    pass
+    state.ball.x, state.ball.y = 0.0, 0.0
+    state.ball.vx, state.ball.vy = 0.0, 0.0
+    state.ball.last_touch_id = None
+
+    home_i = 0
+    away_i = 0
+    for player in state.players:
+        if player.side == Side.HOME:
+            player.x, player.y = state.home_formation[home_i]
+            home_i += 1
+        else:  # Side.AWAY
+            x, y = state.away_formation[away_i]
+            player.x, player.y = (-x, -y)
+            away_i += 1
+        player.cooldown = 0
 
 
 def _normalize_vector(dx: float, dy: float) -> tuple[float, float]:
