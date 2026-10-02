@@ -21,7 +21,7 @@ from app.engine.constants import (
     TRIANGLE_HOME,
 )
 from app.engine.events import GoalEvent
-from app.engine.state import MatchState, Side
+from app.engine.state import BallState, MatchState, PlayerState, Side
 
 
 def _scale(attr: int, value_range: tuple[float, float]) -> float:
@@ -140,6 +140,70 @@ def _decrease_cooldowns(state: MatchState) -> None:
             player.cooldown -= 1
 
 
+KICK_ACTIONS = (Shoot, ShootAtGoal, PassTo)
+
+
+def _can_kick(player: PlayerState, action: Action | None, ball: BallState) -> bool:
+    if not isinstance(action, KICK_ACTIONS):
+        return False
+    if player.cooldown > 0:
+        return False
+    distance = hypot(ball.x - player.x, ball.y - player.y)
+    return distance <= _scale(player.control, CONTROL_RADIUS_RANGE)
+
+
+def _resolve_kicks(
+    state: MatchState, actions: dict[str, Action], rng: random.Random
+) -> None:
+    candidates: list[PlayerState] = [
+        p for p in state.players if _can_kick(p, actions.get(p.id), state.ball)
+    ]
+    if not candidates:
+        return
+
+    max_strength = max(p.strength for p in candidates)
+    strongest = [p for p in candidates if p.strength == max_strength]
+    winner = rng.choice(strongest)
+
+    action = actions[winner.id]
+    ball = state.ball
+    if isinstance(action, Shoot):
+        x_normalized, y_normalized = _normalize_vector(action.dx, action.dy)
+        speed_power = _scale(winner.power, KICK_SPEED_RANGE)
+        pct = _clamp(action.power_pct, 0, 100) / 100
+        vx = x_normalized * speed_power * pct
+        vy = y_normalized * speed_power * pct
+
+    elif isinstance(action, ShootAtGoal):
+        goal_x = FIELD_HALF_LENGTH if winner.side == Side.HOME else -FIELD_HALF_LENGTH
+        dx = goal_x - ball.x
+        dy = -ball.y
+        x_normalized, y_normalized = _normalize_vector(dx, dy)
+        speed_power = _scale(winner.power, KICK_SPEED_RANGE)
+        vx = x_normalized * speed_power
+        vy = y_normalized * speed_power
+
+    elif isinstance(action, PassTo):
+        teammate = next((p for p in state.players if p.id == action.target_id), None)
+        if teammate is None or teammate.side != winner.side or teammate.id == winner.id:
+            return
+
+        dx = teammate.x - ball.x
+        dy = teammate.y - ball.y
+        distance = hypot(dx, dy)
+        x_normalized, y_normalized = _normalize_vector(dx, dy)
+        speed = min(
+            distance * (1 - BALL_FRICTION) / DT,
+            _scale(winner.power, KICK_SPEED_RANGE),
+        )
+        vx = x_normalized * speed
+        vy = y_normalized * speed
+
+    ball.vx, ball.vy = vx, vy
+    ball.last_touch_id = winner.id
+    winner.cooldown = round(_scale(winner.agility, COOLDOWN_TICKS_RANGE))
+
+
 def step(
     state: MatchState,
     actions: dict[str, Action],
@@ -150,7 +214,11 @@ def step(
     si un jugador no está en el dict, no hizo nada en este tick.
     """
     events: list[GoalEvent] = []
+
+    _resolve_kicks(state, actions, rng)
+
     _move_players(state, actions)
+
     _move_ball(state)
 
     goal = _check_goal(state)
@@ -158,6 +226,7 @@ def step(
         events.append(goal)
 
     _decrease_cooldowns(state)
+
     state.tick += 1
 
     return events
