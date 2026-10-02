@@ -204,6 +204,14 @@ def _resolve_kicks(
     winner.cooldown = round(_scale(winner.agility, COOLDOWN_TICKS_RANGE))
 
 
+def kickoff(state: MatchState) -> None:
+    """Deja el partido listo para el saque inicial, lo tiene que llamar el runner antes del primer step"""
+    _reset_positions(state)
+    state.tick = 0
+    state.home_score = 0
+    state.away_score = 0
+
+
 def step(
     state: MatchState,
     actions: dict[str, Action],
