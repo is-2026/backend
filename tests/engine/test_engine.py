@@ -21,7 +21,7 @@ from app.engine.constants import (
     TICKS_PER_SECOND,
     TRIANGLE_HOME,
 )
-from app.engine.engine import _scale, step
+from app.engine.engine import _reset_positions, _scale, step
 
 # velocidad de una pelota que pegó a 10 m/s: rebota y después frena (= 7.6)
 BOUNCED_SPEED = 10.0 * BALL_BOUNCE * BALL_FRICTION
@@ -178,3 +178,24 @@ def test_bounce_only_slows_the_component_that_hits(state, rng):
     assert ball.vx == pytest.approx(-BOUNCED_SPEED)
     assert ball.vy == pytest.approx(2.0 * BALL_FRICTION)  # solo fricción, sin rebote
     assert ball.y == pytest.approx(5.2)  # sigue avanzando a lo largo del borde
+
+
+def test_reset_positions(state):
+    # desordenamos todo, jugadores, pelota y cooldowns
+    for player in state.players:
+        player.x, player.y = 7.0, 7.0
+        player.cooldown = 5
+    ball = state.ball
+    ball.x, ball.y, ball.vx, ball.vy = 3.0, -2.0, 10.0, 4.0
+    ball.last_touch_id = "h1"
+
+    _reset_positions(state)
+
+    home = [p for p in state.players if p.side == "home"]
+    away = [p for p in state.players if p.side == "away"]
+    assert [(p.x, p.y) for p in home] == list(TRIANGLE_HOME)
+    # el visitante usa la misma formación pero espejada
+    assert [(p.x, p.y) for p in away] == [(-x, -y) for x, y in TRIANGLE_HOME]
+    assert all(p.cooldown == 0 for p in state.players)
+    assert (ball.x, ball.y, ball.vx, ball.vy) == (0.0, 0.0, 0.0, 0.0)
+    assert ball.last_touch_id is None

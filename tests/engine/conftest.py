@@ -4,6 +4,8 @@ import pytest
 
 from app.engine.state import MatchState, PlayerState, Side
 
+from app.engine.constants import TRIANGLE_HOME
+
 
 def make_player(
     id: str, side: Side, x: float = 0.0, y: float = 0.0, **pacss: int
@@ -46,7 +48,9 @@ def state():
     ]
     return MatchState(
         home_team_id="club-local",
+        home_formation=TRIANGLE_HOME,
         away_team_id="club-visitante",
+        away_formation=TRIANGLE_HOME,
         players=players,
         total_ticks=3000,
     )
