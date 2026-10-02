@@ -78,21 +78,24 @@ def test_borders(state, rng, initial_x, initial_y, dx, dy, expected_x, expected_
 
 
 def test_pct_speed(state, rng):
-    player1 = state.players[0]
-    player1.x = 0.0
-    player1.y = 0.0
-    player2 = state.players[1]
-    player2.x = 0.0
-    player2.y = 0.0
-    action1 = Move(dx=1.0, dy=1.0, speed_pct=100.0)
-    action2 = Move(dx=1.0, dy=1.0, speed_pct=150.0)
-    step(state, {player1.id: action1, player2.id: action2}, rng)
+    player1, player2 = state.players[0], state.players[1]
+    player1.x, player1.y = 0.0, 0.0
+    player2.x, player2.y = 0.0, 0.0
+
+    step(state, {player1.id: Move(1, 1, 100), player2.id: Move(1, 1, 150)}, rng)
+
     assert player1.x == pytest.approx(player2.x)
     assert player1.y == pytest.approx(player2.y)
-    action1 = Move(dx=1.0, dy=1.0, speed_pct=0.0)
-    action2 = Move(dx=1.0, dy=1.0, speed_pct=-50.0)
-    assert player1.x == pytest.approx(player2.x)
-    assert player1.y == pytest.approx(player2.y)
+
+
+def test_negative_pct_does_not_move(state, rng):
+    player = state.players[0]
+    x_before, y_before = player.x, player.y
+
+    step(state, {player.id: Move(1, 0, -50)}, rng)
+
+    assert player.x == x_before
+    assert player.y == y_before
 
 
 def test_still_ball(state, rng):
