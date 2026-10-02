@@ -74,10 +74,11 @@ async def register_user(
 )
 async def login(
     auth_login_input: AuthLoginInput = Body(..., description=""),
+    session: AsyncSession = Depends(get_session),
 ) -> AuthResponse:
     if not BaseAuthenticationApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseAuthenticationApi.subclasses[0]().login(auth_login_input)
+    return await BaseAuthenticationApi.subclasses[0](session).login(auth_login_input)
 
 
 @router.post(
