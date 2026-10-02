@@ -134,7 +134,7 @@ def _check_goal(state: MatchState) -> GoalEvent | None:
     return event
 
 
-def _register_cooldowns(state: MatchState) -> None:
+def _decrease_cooldowns(state: MatchState) -> None:
     for player in state.players:
         if player.cooldown > 0:
             player.cooldown -= 1
@@ -157,7 +157,7 @@ def step(
     if goal is not None:
         events.append(goal)
 
-    _register_cooldowns(state)
+    _decrease_cooldowns(state)
     state.tick += 1
 
     return events
