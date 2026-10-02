@@ -82,7 +82,7 @@ async def create_friendly(
     """Crea un amistoso esperando por un rival. Si se envía password, el amistoso se marca como privado."""
     if not BaseFriendliesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseFriendliesApi.subclasses[0]().create_friendly(create_friendly_input)
+    return await BaseFriendliesApi.subclasses[0]().create_friendly(create_friendly_input, club.id)
 
 
 @router.post(
