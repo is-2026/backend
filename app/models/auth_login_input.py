@@ -20,7 +20,7 @@ import json
 
 
 
-from pydantic import BaseModel, ConfigDict, StrictStr
+from pydantic import BaseModel, ConfigDict, StrictStr, SecretStr
 from typing import Any, ClassVar, Dict, List
 try:
     from typing import Self
@@ -32,7 +32,7 @@ class AuthLoginInput(BaseModel):
     AuthLoginInput
     """ # noqa: E501
     email: StrictStr
-    password: StrictStr
+    password: SecretStr
     __properties: ClassVar[List[str]] = ["email", "password"]
 
     model_config = {
