@@ -77,7 +77,7 @@ def take_snapshot(state: MatchState, side: Side) -> Snapshot:
 
 
 def compile_behavior(code: str, name: str) -> CodeType:
-    # el filename es lo que aparece en el traceback por ej: File "<behavior Atacante>", line x
+    # el filename es lo que aparece en el traceback por ej: File "<behavior UUID>", line x
     # para pensar en un futuro: cuándo se verifica la sintaxis del código?
     # a este momento llega el código full verificado o no?
     try:
@@ -121,6 +121,11 @@ class PlayerBrain:
             self._decide = None
         else:
             self._decide = namespace.get("decide_action")
+            if self._decide is None:
+                logger.warning(
+                    "El comportamiento del jugador %s no define decide_action()",
+                    self._player_id,
+                )
 
     # --- primitivas de lectura ---
     def my_pos(self) -> tuple[float, float]:
@@ -188,6 +193,24 @@ class PlayerBrain:
             )
             return None
         return self._action
+
+
+def create_brains(state: MatchState, codes: dict[str, str]) -> dict[str, PlayerBrain]:
+    """Arma los brains al iniciar el partido: compila el código una sola vez.
+    codes = player.id -> código del jugador
+    Si un jugador no tiene código o no compila, no se le arma brain"""
+    brains: dict[str, PlayerBrain] = {}
+    for player in state.players:
+        code = codes.get(player.id)
+        if code is None:
+            continue
+        try:
+            compiled_code = compile_behavior(code, player.id)
+        except InvalidBehaviorCode:
+            logger.exception("El comportamiento del jugador %s no compila", player.id)
+            continue
+        brains[player.id] = PlayerBrain(player, compiled_code)
+    return brains
 
 
 def decide_actions(
