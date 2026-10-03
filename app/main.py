@@ -28,6 +28,8 @@ from app.apis.match_api import router as MatchApiRouter
 from app.apis.players_api import router as PlayersApiRouter
 from app.apis.ranking_api import router as RankingApiRouter
 from app.apis.user_api import router as UserApiRouter
+from fastapi.middleware.cors import CORSMiddleware
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -42,6 +44,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 register_exception_handlers(app)
 
 @app.get("/")
