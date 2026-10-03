@@ -2,7 +2,7 @@ from textwrap import dedent
 
 import pytest
 
-from app.engine.actions import Move
+from app.engine.actions import Move, PassTo, Shoot, ShootAtGoal
 from app.engine.behavior_exec import PlayerBrain, compile_behavior, take_snapshot
 from app.engine.state import Side
 
@@ -18,6 +18,12 @@ def brain_with_snapshot(state, player_id):
     brain = make_brain(state, player_id)
     brain.run(take_snapshot(state, player.side))
     return brain
+
+
+def run_behavior(state, player_id, code):
+    """Corre el comportamiento un tick y devuelve la acción que decidió."""
+    player = next(p for p in state.players if p.id == player_id)
+    return make_brain(state, player_id, code).run(take_snapshot(state, player.side))
 
 
 def test_take_snapshot_home(state):
@@ -152,31 +158,99 @@ def test_time_and_total_time(state):
 
 def test_home_move_is_not_rotated(state):
     # h2 está en (-12, -5) y ve la pelota (en el centro) adelante suyo: hacia +x en su vista
-    brain = make_brain(
-        state,
-        "h2",
-        """
+    code = """
         def decide_action():
             move(1, 0, 100)
-        """,
-    )
-
-    action = brain.run(take_snapshot(state, Side.HOME))
+    """
+    action = run_behavior(state, "h2", code)
 
     assert action == Move(1.0, 0.0, 100.0)
 
 
 def test_away_move_is_rotated_to_absolute(state):
     # a1 está en (4, 0) y ve la pelota (en el centro) adelante suyo: hacia +x en su vista
-    brain = make_brain(
-        state,
-        "a1",
-        """
+    code = """
         def decide_action():
             move(1, 0, 100)
-        """,
-    )
-
-    action = brain.run(take_snapshot(state, Side.AWAY))
+    """
+    action = run_behavior(state, "a1", code)
 
     assert action == Move(-1.0, 0.0, 100.0)  # en absolutas va hacia -x
+
+
+def test_home_shoot_is_not_rotated(state):
+    code = """
+        def decide_action():
+            shoot(10, 5, 100)
+    """
+    action = run_behavior(state, "h2", code)
+
+    assert action == Shoot(10.0, 5.0, 100.0)
+
+
+def test_away_shoot_is_rotated(state):
+    code = """
+        def decide_action():
+            shoot(10, 5, 100)
+    """
+    action = run_behavior(state, "a1", code)
+
+    assert action == Shoot(-10.0, -5.0, 100.0)
+
+
+def test_shoot_arco(state):
+    code = """
+        def decide_action():
+            shoot_arco()
+        """
+    action = run_behavior(state, "a1", code)
+
+    assert action == ShootAtGoal()
+
+
+def test_pass_to(state):
+    code = """
+        def decide_action():
+            pass_to("h2")
+    """
+    action = run_behavior(state, "h1", code)
+
+    assert action == PassTo("h2")
+
+
+def test_second_action_is_ignored(state):
+    code = """
+        def decide_action():
+            move(1, 0, 100)
+            shoot(1, 0, 100)
+    """
+    action = run_behavior(state, "h1", code)
+
+    assert action == Move(1.0, 0.0, 100.0)
+
+
+def test_action_resets_between_ticks(state):
+    code = """
+        n = 0
+        def decide_action():
+            global n
+            n += 1
+            if n == 1:
+                move(1, 0, 100)
+            if n == 2:
+                shoot(1, 0, 100)
+    """
+    brain = make_brain(state, "h1", code)
+    snapshot = take_snapshot(state, Side.HOME)
+
+    assert brain.run(snapshot) == Move(1.0, 0.0, 100)
+    state.tick += 1
+
+    snapshot = take_snapshot(state, Side.HOME)
+
+    assert brain.run(snapshot) == Shoot(1, 0, 100)
+    state.tick += 1
+
+    snapshot = take_snapshot(state, Side.HOME)
+
+    assert brain.run(snapshot) is None
