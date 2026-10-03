@@ -1,9 +1,11 @@
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from math import hypot
 from types import CodeType
 
 from app.engine.actions import Action, Move, PassTo, Shoot, ShootAtGoal
+from app.engine.engine import control_radius
 from app.engine.state import MatchState, PlayerState, Side
 
 logger = logging.getLogger(__name__)
@@ -37,7 +39,7 @@ class InvalidBehaviorCode(Exception):
     """Comportamiento con sintaxis inválida"""
 
 
-def _to_view(x: float, y: float, side: Side.Home) -> tuple[float, float]:
+def _to_view(x: float, y: float, side: Side) -> tuple[float, float]:
     # el estado tiene las posiciones en absoluto
     # los comportamientos piensan que estan como home
     # si es away lo doy vuelta para que piense que es home
@@ -88,7 +90,9 @@ class PlayerBrain:
     def __init__(self, player: PlayerState, code: CodeType):
         self._player_id = player.id
         self._side = player.side
-        self._control = player.control
+        self._control_radius = control_radius(player.control)
+
+        self._decide: Callable[[], None] | None
 
         self._action: Action | None = None
         self._snapshot: Snapshot | None = None
@@ -103,14 +107,20 @@ class PlayerBrain:
             "time": self.time,
             "total_time": self.total_time,
             "move": self.move,
+            "pass_to": self.pass_to,
+            "shoot": self.shoot,
+            "shoot_arco": self.shoot_arco,
         }
         try:
             exec(code, namespace)
         except Exception:
-            logger.exception("Código con excepciones, no hago nada")
+            logger.exception(
+                "No se pudo cargar el comportamiento del jugador %s",
+                self._player_id,
+            )
             self._decide = None
         else:
-            self._decide: Callable[[], None] | None = namespace.get("decide_action")
+            self._decide = namespace.get("decide_action")
 
     # --- primitivas de lectura ---
     def my_pos(self) -> tuple[float, float]:
@@ -121,36 +131,48 @@ class PlayerBrain:
         return self._snapshot.ball.x, self._snapshot.ball.y
 
     def has_ball(self) -> bool:
-        pass
+        player_x, player_y = self.my_pos()
+        ball_x, ball_y = self.ball_pos()
+        distance = hypot(ball_x - player_x, ball_y - player_y)
+        return distance <= self._control_radius
 
     def team_pos(self) -> list[tuple[str, float, float]]:
-        pass
+        return [
+            (p.id, p.x, p.y)
+            for p in self._snapshot.teammates
+            if p.id != self._player_id
+        ]
 
     def enemy_pos(self) -> list[tuple[str, float, float]]:
-        pass
+        return [(p.id, p.x, p.y) for p in self._snapshot.rivals]
 
     def score(self) -> tuple[int, int]:
-        pass
+        return self._snapshot.own_score, self._snapshot.rival_score
 
     def time(self) -> int:
-        pass
+        return self._snapshot.tick
 
     def total_time(self) -> int:
-        pass
+        return self._snapshot.total_ticks
 
     # --- primitivas de acción ---
     def move(self, dx: float, dy: float, speed_pct: float):
         if self._action is None:
-            self._action = Move(float(dx), float(dy), float(speed_pct))
+            dx, dy = _to_view(float(dx), float(dy), self._side)
+            self._action = Move(dx, dy, float(speed_pct))
 
     def pass_to(self, player_id: str):
-        pass
+        if self._action is None:
+            self._action = PassTo(str(player_id))
 
     def shoot(self, dx: float, dy: float, power_pct: float):
-        pass
+        if self._action is None:
+            dx, dy = _to_view(float(dx), float(dy), self._side)
+            self._action = Shoot(dx, dy, float(power_pct))
 
     def shoot_arco(self):
-        pass
+        if self._action is None:
+            self._action = ShootAtGoal()
 
     def run(self, snapshot: Snapshot) -> Action | None:
         self._snapshot = snapshot
@@ -166,3 +188,21 @@ class PlayerBrain:
             )
             return None
         return self._action
+
+
+def decide_actions(
+    state: MatchState, brains: dict[str, PlayerBrain]
+) -> dict[str, Action]:
+    """Corre decide_action de cada jugador y devuelve las acciones para step().
+    Se llama antes de step(), así todos leen el mismo estado."""
+    snapshots = {side: take_snapshot(state, side) for side in Side}
+
+    actions: dict[str, Action] = {}
+    for player in state.players:
+        brain = brains.get(player.id)
+        if brain is None:
+            continue
+        action = brain.run(snapshots[player.side])
+        if action is not None:
+            actions[player.id] = action
+    return actions
