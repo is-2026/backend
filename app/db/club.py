@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
@@ -21,4 +21,16 @@ class ClubDB(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+    # RELATIONSHIPS --
+    # 1 club juega muchos partidos de local
+    home_matches: Mapped[list["MatchDB"]] = relationship(
+        foreign_keys="[MatchDB.home_club_id]",
+        back_populates="home_club"
+    )
+    # 1 club juega muchos partidos de visitante
+    away_matches: Mapped[list["MatchDB"]] = relationship(
+        foreign_keys="[MatchDB.away_club_id]",
+        back_populates="away_club"
     )
