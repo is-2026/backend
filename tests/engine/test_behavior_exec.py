@@ -1,12 +1,19 @@
+import logging
 from textwrap import dedent
 
 import pytest
 
 from app.engine.actions import Move, PassTo, Shoot, ShootAtGoal
-from app.engine.behavior_exec import PlayerBrain, compile_behavior, take_snapshot
+from app.engine.behavior_exec import (
+    InvalidBehaviorCode,
+    PlayerBrain,
+    compile_behavior,
+    take_snapshot,
+)
 from app.engine.state import Side
 
 
+# --- auxiliares ---
 def make_brain(state, player_id, code="def decide_action():\n    pass\n"):
     player = next(p for p in state.players if p.id == player_id)
     return PlayerBrain(player, compile_behavior(dedent(code), "test"))
@@ -26,6 +33,7 @@ def run_behavior(state, player_id, code):
     return make_brain(state, player_id, code).run(take_snapshot(state, player.side))
 
 
+# --- snapshots ---
 def test_take_snapshot_home(state):
     state.ball.x, state.ball.y = 5.0, 2.0
     state.home_score, state.away_score = 4, 1
@@ -72,6 +80,7 @@ def test_take_snapshot_away(state):
     assert (snapshot.tick, snapshot.total_ticks) == (10, 3000)
 
 
+# --- primitivas de lectura ---
 def test_my_pos_home(state):
     brain = brain_with_snapshot(state, "h2")
     assert brain.my_pos() == (-12.0, -5.0)
@@ -156,6 +165,7 @@ def test_time_and_total_time(state):
     assert brain.total_time() == 3000
 
 
+# --- primitivas de acción ---
 def test_home_move_is_not_rotated(state):
     # h2 está en (-12, -5) y ve la pelota (en el centro) adelante suyo: hacia +x en su vista
     code = """
@@ -270,3 +280,127 @@ def test_action_resets_between_ticks(state):
     snapshot = take_snapshot(state, Side.HOME)
 
     assert brain.run(snapshot) is None
+
+
+# --- errores en el código del comportamiento ---
+def test_exception_in_decide_action_is_logged(state, caplog):
+    action = run_behavior(
+        state,
+        "h1",
+        """
+        def decide_action():
+            1 / 0
+        """,
+    )
+
+    assert action is None
+    assert "h1" in caplog.text  # el log dice qué jugador falló
+    assert "ZeroDivisionError" in caplog.text  # y por qué
+
+
+def test_action_before_exception_is_discarded(state):
+    action = run_behavior(
+        state,
+        "h1",
+        """
+        def decide_action():
+            move(1, 0, 100)
+            raise ValueError("falla después de moverse")
+        """,
+    )
+
+    assert action is None
+
+
+def test_invalid_argument_is_logged(state, caplog):
+    action = run_behavior(
+        state,
+        "h1",
+        """
+        def decide_action():
+            shoot("hola", 0, 100)
+        """,
+    )
+
+    assert action is None
+    assert "ValueError" in caplog.text
+
+
+def test_decide_action_not_callable(state):
+    action = run_behavior(state, "h1", "decide_action = 5\n")
+
+    assert action is None
+
+
+def test_player_recovers_after_failing_tick(state):
+    # el error solo le hace perder ESE tick, no queda deshabilitado
+    brain = make_brain(
+        state,
+        "h1",
+        """
+        n = 0
+        def decide_action():
+            global n
+            n += 1
+            if n == 1:
+                raise ValueError("falla solo en el primer tick")
+            move(1, 0, 100)
+        """,
+    )
+    snapshot = take_snapshot(state, Side.HOME)
+
+    assert brain.run(snapshot) is None
+    assert brain.run(snapshot) == Move(1.0, 0.0, 100.0)
+
+
+# --- errores al cargar el código ---
+def test_load_error_disables_player(state, caplog):
+    brain = make_brain(
+        state,
+        "h1",
+        """
+        1 / 0  # falla a nivel módulo, antes de definir decide_action
+        def decide_action():
+            move(1, 0, 100)
+        """,
+    )
+    snapshot = take_snapshot(state, Side.HOME)
+
+    assert "h1" in caplog.text
+    # queda deshabilitado todo el partido, no solo un tick
+    assert brain.run(snapshot) is None
+    assert brain.run(snapshot) is None
+
+
+def test_load_error_after_defining_decide_action_disables_player(state):
+    # aunque decide_action llegó a definirse, el código no cargó entero: no juega
+    brain = make_brain(
+        state,
+        "h1",
+        """
+        def decide_action():
+            move(1, 0, 100)
+        1 / 0
+        """,
+    )
+
+    assert brain.run(take_snapshot(state, Side.HOME)) is None
+
+
+def test_missing_decide_action_logs_warning(state, caplog):
+    # como los defaults placeholder que quedaron guardados en la base
+    make_brain(
+        state,
+        "h1",
+        """
+        def decidir_accion():
+            pass
+        """,
+    )
+
+    assert [r.levelno for r in caplog.records] == [logging.WARNING]
+
+
+def test_syntax_error_raises_invalid_behavior_code():
+    with pytest.raises(InvalidBehaviorCode):
+        compile_behavior("def decide_action(:\n", "roto")
