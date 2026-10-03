@@ -178,6 +178,14 @@ def test_away_move_is_rotated_to_absolute(state):
     assert action == Move(-1.0, 0.0, 100.0)  # en absolutas va hacia -x
 
 
+@pytest.mark.parametrize("bad", ["float('nan')", "float('inf')", "float('-inf')"])
+def test_move_rejects_non_finite(state, bad):
+    action = run_behavior(
+        state, "h1", f"def decide_action():\n    move({bad}, 0, 100)\n"
+    )
+    assert action is None
+
+
 def test_home_shoot_is_not_rotated(state):
     code = """
         def decide_action():
@@ -196,6 +204,14 @@ def test_away_shoot_is_rotated(state):
     action = run_behavior(state, "a1", code)
 
     assert action == Shoot(-10.0, -5.0, 100.0)
+
+
+@pytest.mark.parametrize("bad", ["float('nan')", "float('inf')", "float('-inf')"])
+def test_shoot_rejects_non_finite(state, bad):
+    action = run_behavior(
+        state, "h1", f"def decide_action():\n    shoot({bad}, 0, 100)\n"
+    )
+    assert action is None
 
 
 def test_shoot_arco(state):
