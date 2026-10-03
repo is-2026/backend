@@ -8,6 +8,8 @@ from app.engine.behavior_exec import (
     InvalidBehaviorCode,
     PlayerBrain,
     compile_behavior,
+    create_brains,
+    decide_actions,
     take_snapshot,
 )
 from app.engine.state import Side
@@ -404,3 +406,50 @@ def test_missing_decide_action_logs_warning(state, caplog):
 def test_syntax_error_raises_invalid_behavior_code():
     with pytest.raises(InvalidBehaviorCode):
         compile_behavior("def decide_action(:\n", "roto")
+
+
+# --- decide_actions()
+CHASE_BALL = """
+    def decide_action():
+        x, y = my_pos()
+        bx, by = ball_pos()
+        move(bx - x, by - y, 100)
+"""
+
+BROKEN = """
+    def decide_action():
+        1 / 0
+"""
+
+
+def same_code_for_all(state, code):
+    """codes para create_brains: todos los jugadores con el mismo comportamiento."""
+    return {p.id: dedent(code) for p in state.players}
+
+
+def test_each_player_sees_its_own_side(state):
+    # mismo código en los 6. Si cada uno lee la foto de su lado y su acción se
+    # rota de vuelta, todos terminan yendo hacia la pelota en absolutas
+    state.ball.x, state.ball.y = 5.0, 2.0
+    brains = create_brains(state, same_code_for_all(state, CHASE_BALL))
+
+    actions = decide_actions(state, brains)
+
+    assert actions == {
+        "h1": Move(9.0, 2.0, 100.0),  # h1 en (-4, 0)
+        "h2": Move(17.0, 7.0, 100.0),  # h2 en (-12, -5)
+        "h3": Move(17.0, -3.0, 100.0),  # h3 en (-12, 5)
+        "a1": Move(1.0, 2.0, 100.0),  # a1 en (4, 0)
+        "a2": Move(-7.0, -3.0, 100.0),  # a2 en (12, 5)
+        "a3": Move(-7.0, 7.0, 100.0),  # a3 en (12, -5)
+    }
+
+
+def test_broken_player_does_not_stop_the_rest(state):
+    codes = same_code_for_all(state, CHASE_BALL)
+    codes["h2"] = dedent(BROKEN)
+    brains = create_brains(state, codes)
+
+    actions = decide_actions(state, brains)
+
+    assert set(actions) == {"h1", "h3", "a1", "a2", "a3"}
