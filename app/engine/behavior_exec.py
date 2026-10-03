@@ -1,7 +1,7 @@
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from math import hypot
+from math import hypot, isfinite
 from types import CodeType
 
 from app.engine.actions import Action, Move, PassTo, Shoot, ShootAtGoal
@@ -44,6 +44,15 @@ def _to_view(x: float, y: float, side: Side) -> tuple[float, float]:
     # los comportamientos piensan que estan como home
     # si es away lo doy vuelta para que piense que es home
     return (x, y) if side == Side.HOME else (-x, -y)
+
+
+def _to_number(value: object) -> float:
+    """Convierte un argumento de una primitiva a float.
+    Rechaza nan e inf, el motor no los maneja"""
+    number = float(value)
+    if not isfinite(number):
+        raise ValueError(f"se esperaba un número finito, llegó {value!r}")
+    return number
 
 
 def take_snapshot(state: MatchState, side: Side) -> Snapshot:
@@ -163,8 +172,8 @@ class PlayerBrain:
     # --- primitivas de acción ---
     def move(self, dx: float, dy: float, speed_pct: float):
         if self._action is None:
-            dx, dy = _to_view(float(dx), float(dy), self._side)
-            self._action = Move(dx, dy, float(speed_pct))
+            dx, dy = _to_view(_to_number(dx), _to_number(dy), self._side)
+            self._action = Move(dx, dy, _to_number(speed_pct))
 
     def pass_to(self, player_id: str):
         if self._action is None:
@@ -172,8 +181,8 @@ class PlayerBrain:
 
     def shoot(self, dx: float, dy: float, power_pct: float):
         if self._action is None:
-            dx, dy = _to_view(float(dx), float(dy), self._side)
-            self._action = Shoot(dx, dy, float(power_pct))
+            dx, dy = _to_view(_to_number(dx), _to_number(dy), self._side)
+            self._action = Shoot(dx, dy, _to_number(power_pct))
 
     def shoot_arco(self):
         if self._action is None:
