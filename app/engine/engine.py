@@ -143,13 +143,18 @@ def _decrease_cooldowns(state: MatchState) -> None:
 KICK_ACTIONS = (Shoot, ShootAtGoal, PassTo)
 
 
+def control_radius(control: int) -> float:
+    """Calcula el radio de control, donde puede patear la pelota"""
+    return _scale(control, CONTROL_RADIUS_RANGE)
+
+
 def _can_kick(player: PlayerState, action: Action | None, ball: BallState) -> bool:
     if not isinstance(action, KICK_ACTIONS):
         return False
     if player.cooldown > 0:
         return False
     distance = hypot(ball.x - player.x, ball.y - player.y)
-    return distance <= _scale(player.control, CONTROL_RADIUS_RANGE)
+    return distance <= control_radius(player.control)
 
 
 def _resolve_kicks(
