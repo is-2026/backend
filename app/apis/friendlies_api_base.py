@@ -26,6 +26,7 @@ class BaseFriendliesApi:
     async def create_friendly(
         self,
         create_friendly_input: CreateFriendlyInput,
+        creator_club_id : UUID
     ) -> Friendly:
         """Crea un amistoso esperando por un rival. Si se envía password, el amistoso se marca como privado."""
         ...
