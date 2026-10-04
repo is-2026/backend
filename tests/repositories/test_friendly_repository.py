@@ -103,3 +103,81 @@ async def test_create_friendly_duplicate_player_raises(session):
     with pytest.raises(InvalidSquad):
         await FriendlyRepository(session).create(club_id, "hash", squad)
 
+
+async def test_list_available_friendlies_empty(session):
+    repo = FriendlyRepository(session)
+    result = await repo.list_available_friendlies()
+    assert result is not None
+    assert result == []
+
+
+async def test_list_available_friendlies_success(session):
+    # creamos el usuario y su club
+    user_id = uuid.uuid4()
+    user_db = UserDB(
+        id=user_id,
+        email="test_friendly@example.com",
+        hashed_password="password123"
+    )
+    session.add(user_db)
+    await session.commit()
+    club_id = uuid.uuid4()
+    club_db = ClubDB(
+        id=club_id,
+        club_name="Club Test Amistosos",
+        avatar_url="https://example.com/avatar.png",
+        user_id=user_id
+    )
+    session.add(club_db)
+    await session.commit()
+
+    # creamos los amistosos para probar
+    friendly_id_1 = uuid.uuid4()
+    friendly_id_2 = uuid.uuid4()
+    friendly_id_3 = uuid.uuid4()
+    friendly_public = FriendlyDB(
+        id=friendly_id_1,
+        creator_club_id=club_id,
+        status="waiting_for_rival",
+        hashed_password=None    # amistoso publico
+    )
+    friendly_private = FriendlyDB(
+        id=friendly_id_2,
+        creator_club_id=club_id,
+        status="waiting_for_rival",
+        hashed_password="hashed" # amistoso privado
+    )
+    friendly_accepted = FriendlyDB(
+        id=friendly_id_3,
+        creator_club_id=club_id,
+        status="accepted",  # status invalido (no deberia listarse)
+        hashed_password=None
+    )
+    session.add(friendly_public)
+    session.add(friendly_private)
+    session.add(friendly_accepted)
+    await session.commit()
+
+    # hacemos la consulta
+    repo = FriendlyRepository(session)
+    result = await repo.list_available_friendlies()
+    
+    # aserciones
+    assert result is not None
+    assert isinstance(result, list)
+
+    # solo 2 de los 3 amistosos cumplen con "waiting_for_rival"
+    assert len(result) == 2
+    assert isinstance(result[0], FriendlyDB)
+    
+    result_ids = [f.id for f in result]
+    assert friendly_id_1 in result_ids
+    assert friendly_id_2 in result_ids
+    assert friendly_id_3 not in result_ids
+
+    # verificamos la privacidad de los amistosos
+    for friendly in result:
+        if friendly.id == friendly_id_1:
+            assert repo.is_private(friendly) is False
+        elif friendly.id == friendly_id_2:
+            assert repo.is_private(friendly) is True
