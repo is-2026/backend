@@ -25,7 +25,7 @@ class FriendlyDB(Base):
     status : Mapped[str] = mapped_column(String(200), default="waiting_for_rival")
 
     match_id : Mapped[uuid.UUID] = mapped_column(
-        nullable= True #Poner FK cuando tengamos tabla de partidos.
+        ForeignKey("matches.id"), nullable= True
     )
 
 class FriendlyPlayerDB(Base):
