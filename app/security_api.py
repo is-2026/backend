@@ -1,6 +1,5 @@
 # coding: utf-8
 
-import uuid
 from typing import List
 
 import jwt
@@ -23,7 +22,7 @@ from fastapi.security.api_key import (  # noqa: F401
 )
 
 from app.models.extra_models import TokenModel
-from app.security.tokens import decode_access_token
+from app.security.tokens import get_user_id
 
 bearer_auth = HTTPBearer(auto_error=False)
 
@@ -42,11 +41,10 @@ def get_token_bearerAuth(
     if not credentials:
         raise _unauthorized()
     try:
-        token = decode_access_token(credentials.credentials)
-        uuid.UUID(token["sub"])
+        user_id = get_user_id(credentials.credentials)
     except (jwt.InvalidTokenError, ValueError) as e:
         raise _unauthorized() from e
-    return TokenModel(sub=token["sub"])
+    return TokenModel(sub=str(user_id))
 
 
 def _unauthorized() -> HTTPException:
