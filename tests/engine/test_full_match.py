@@ -4,7 +4,7 @@ from app.behaviors.defaults import DEFAULT_BEHAVIORS
 from app.engine.behavior_exec import create_brains, decide_actions
 from app.engine.constants import FIELD_HALF_LENGTH, FIELD_HALF_WIDTH
 from app.engine.engine import kickoff, step
-from tests.engine.test_behavior_exec import same_code_for_all
+from tests.engine.conftest import same_code_for_all
 
 ATTACKER = """
     def decide_action():
