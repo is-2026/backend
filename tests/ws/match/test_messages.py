@@ -1,5 +1,9 @@
 from app.engine.events import GoalEvent
-from app.ws.match.messages import goal_message, match_state_message
+from app.ws.match.messages import (
+    goal_message,
+    match_finished_message,
+    match_state_message,
+)
 
 MATCH_ID = "partido-1"
 
@@ -67,3 +71,32 @@ def test_goal_serializes_to_json_as_intended(match_state):
         "home_score",
         "away_score",
     }
+
+
+def test_match_finished_tiene_el_resultado_final(match_state):
+    match_state.tick = 3000
+    match_state.home_score = 2
+    match_state.away_score = 3
+
+    msg = match_finished_message(MATCH_ID, match_state)
+
+    assert msg.type == "matchFinished"
+    assert msg.data.match_id == MATCH_ID
+    assert msg.data.tick == 3000
+    assert (msg.data.home_score, msg.data.away_score) == (2, 3)
+    assert msg.data.status == "finished"
+
+
+def test_match_finished_se_serializa_como_el_asyncapi(match_state):
+    payload = match_finished_message(MATCH_ID, match_state).model_dump(mode="json")
+
+    assert payload["type"] == "matchFinished"
+    assert set(payload["data"]) == {
+        "match_id",
+        "tick",
+        "match_end",
+        "home_score",
+        "away_score",
+        "status",
+    }
+    assert payload["data"]["status"] == "finished"
