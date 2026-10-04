@@ -1,7 +1,9 @@
 import random
+from textwrap import dedent
 
 import pytest
 
+from app.engine.behavior_exec import PlayerBrain, compile_behavior, take_snapshot
 from app.engine.constants import TRIANGLE_HOME
 from app.engine.state import MatchState, PlayerState, Side
 
@@ -53,3 +55,28 @@ def state():
         players=players,
         total_ticks=3000,
     )
+
+
+# --- auxiliares ---
+def make_brain(state, player_id, code="def decide_action():\n    pass\n"):
+    player = next(p for p in state.players if p.id == player_id)
+    return PlayerBrain(player, compile_behavior(dedent(code), "test"))
+
+
+def brain_with_snapshot(state, player_id):
+    """Brain que ya recibió la foto de su lado, listo para consultar primitivas."""
+    player = next(p for p in state.players if p.id == player_id)
+    brain = make_brain(state, player_id)
+    brain.run(take_snapshot(state, player.side))
+    return brain
+
+
+def run_behavior(state, player_id, code):
+    """Corre el comportamiento un tick y devuelve la acción que decidió."""
+    player = next(p for p in state.players if p.id == player_id)
+    return make_brain(state, player_id, code).run(take_snapshot(state, player.side))
+
+
+def same_code_for_all(state, code):
+    """codes para create_brains: todos los jugadores con el mismo comportamiento."""
+    return {p.id: dedent(code) for p in state.players}
