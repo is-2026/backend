@@ -86,9 +86,8 @@ def take_snapshot(state: MatchState, side: Side) -> Snapshot:
 
 
 def compile_behavior(code: str, name: str) -> CodeType:
-    # el filename es lo que aparece en el traceback por ej: File "<behavior UUID>", line x
-    # para pensar en un futuro: cuándo se verifica la sintaxis del código?
-    # a este momento llega el código full verificado o no?
+    # el filename es lo que aparece en el traceback por ej: File "<behavior h1>", line x
+    # la sintaxis se valida al guardar el comportamiento, acá es solo defensa
     try:
         return compile(code, f"<behavior {name}>", "exec")
     except SyntaxError as e:
