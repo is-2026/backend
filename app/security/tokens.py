@@ -25,3 +25,10 @@ def decode_access_token(token: str) -> dict:
         algorithms=[settings.jwt_algorithm],
         options={"require": ["exp", "sub"]},
     )
+
+
+def get_user_id(token: str) -> uuid.UUID:
+    """Valida el JWT y devuelve el id del usuario (el claim `sub`).
+    Lanza jwt.InvalidTokenError si el token no es válido, o ValueError si `sub` no es un UUID."""
+    payload = decode_access_token(token)
+    return uuid.UUID(payload["sub"])

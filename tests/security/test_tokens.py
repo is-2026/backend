@@ -5,7 +5,7 @@ import jwt
 import pytest
 
 from app.config import get_settings
-from app.security.tokens import create_access_token, decode_access_token
+from app.security.tokens import create_access_token, decode_access_token, get_user_id
 
 
 def _sign(payload: dict, secret: str | None = None, algorithm: str = "HS256") -> str:
@@ -89,3 +89,22 @@ def test_rejects_token_without_signature_alg_none():
 def test_rejects_invalid_token_format():
     with pytest.raises(jwt.DecodeError):
         decode_access_token("this-is-not-a-jwt")
+
+
+# para get_user_id
+def test_get_user_id_returns_sub_as_uuid():
+    user_id = uuid.uuid4()
+
+    assert get_user_id(create_access_token(user_id)) == user_id
+
+
+def test_get_user_id_rejects_sub_that_is_not_uuid():
+    token = _sign({"sub": "abc", "exp": _in(5)})
+
+    with pytest.raises(ValueError):
+        get_user_id(token)
+
+
+def test_get_user_id_rejects_invalid_token():
+    with pytest.raises(jwt.InvalidTokenError):
+        get_user_id("this-is-not-a-jwt")
