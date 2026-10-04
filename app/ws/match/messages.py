@@ -1,10 +1,11 @@
+from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel
 
+from app.engine.constants import TICKS_PER_MINUTE
 from app.engine.events import GoalEvent
 from app.engine.state import MatchState
-from app.engine.constants import TICKS_PER_MINUTE
 
 
 class Position(BaseModel):
@@ -44,6 +45,20 @@ class GoalMessage(BaseModel):
     data: GoalData
 
 
+class MatchFinishedData(BaseModel):
+    match_id: str
+    tick: int
+    home_score: int
+    away_score: int
+    match_end: datetime
+    status: Literal["finished"] = "finished"
+
+
+class MatchFinishedMessage(BaseModel):
+    type: Literal["matchFinished"] = "matchFinished"
+    data: MatchFinishedData
+
+
 def match_state_message(match_id: str, state: MatchState) -> MatchStateMessage:
     """Arma el matchState desde el estado del motor (ya está en coordenadas absolutas)."""
     players = [
@@ -71,5 +86,18 @@ def goal_message(match_id: str, event: GoalEvent, state: MatchState) -> GoalMess
             minute=state.tick // TICKS_PER_MINUTE,
             home_score=state.home_score,
             away_score=state.away_score,
+        )
+    )
+
+
+def match_finished_message(match_id: str, state: MatchState) -> MatchFinishedMessage:
+    """Se llama cuando termina el runner de correr los total_ticks"""
+    return MatchFinishedMessage(
+        data=MatchFinishedData(
+            match_id=match_id,
+            tick=state.tick,
+            home_score=state.home_score,
+            away_score=state.away_score,
+            match_end=datetime.now(timezone.utc),
         )
     )
