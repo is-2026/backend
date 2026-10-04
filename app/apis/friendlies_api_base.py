@@ -36,6 +36,7 @@ class BaseFriendliesApi:
         self,
         friendly_id: UUID,
         join_friendly_input: JoinFriendlyInput,
+        club_id: UUID
     ) -> Friendly:
         """Se une a un amistoso creado por otro club. Si es privado, requiere la contraseña. Al unirse exitosamente, se genera el partido."""
         ...
