@@ -14,6 +14,8 @@ from app.models.join_friendly_input import JoinFriendlyInput
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.security.passwords import hash_password, verify_password
 from app.ws.connection_manager import ConnectionManager
+from app.ws.lobby_friendly import friendly_start_times
+
 
 INTERNAL_ERROR = 1011
 LOBBY_WINDOW_SECONDS = 30
@@ -140,9 +142,10 @@ class FriendliesApiImpl(BaseFriendliesApi):
             raise HTTPException(status_code=400, 
                                 detail="La convocatoria no es valida (jugadores repetidos/inexistentes)"
                                 ) from exc_info
-
+        
         club = await repo.get_club_name(club_id)
         starts_at = datetime.now(timezone.utc) + timedelta(seconds=self._window)
+        friendly_start_times[friendly_id] = starts_at  # para el que entra al lobby después (el rival)
         await self._lobby.broadcast(friendly_id, {#broadcast envia FriendlyClubRegistered a los q esten en el lobby del amistoso
             "type": "friendlyClubRegistered",
             "data": {
@@ -172,21 +175,23 @@ class FriendliesApiImpl(BaseFriendliesApi):
 
  
     async def _start_after_window(self, #Duerme la ventana, y le manda el match_id con FriendlyStart al front
-                                  friendly_id : uuid.UUID, 
+                                  friendly_id : uuid.UUID,
                                   match_id : uuid.UUID) -> None:
         try:
             await asyncio.sleep(self._window)
             if self._match_runner is not None:
-                            await self._match_runner.start(match_id) # primero queda en live_matches
+                await self._match_runner.start(match_id) # primero queda en live_matches
             await self._lobby.broadcast(friendly_id, {
                 "type": "friendlyStart",
                 "data": {"friendly_id": str(friendly_id), "match_id": str(match_id)},
             })
-            await self._lobby.close_all(friendly_id) #cierra los ws 
+            await self._lobby.close_all(friendly_id) #cierra los ws
         except Exception:
             logging.exception("Falló el inicio del amistoso %s", friendly_id)
             await self._lobby.close_all(friendly_id, code=INTERNAL_ERROR)
-            
+        finally:
+            friendly_start_times.pop(friendly_id, None)  # la ventana terminó (bien o mal): ya no hay cuenta regresiva
+
     async def cancel_friendly(self, friendly_id: uuid.UUID) -> None:
         raise NotImplementedError
                     
