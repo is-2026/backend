@@ -59,4 +59,9 @@ class PlayerRepository:
             .where(PlayerDB.club_id == club_id, PlayerDB.id.in_(player_ids))
         )
         return result.scalar_one()
-    
+
+    async def list_players_club(self, club_id: uuid.UUID) -> list[PlayerDB]:
+        result = await self.session.execute(
+            select(PlayerDB).where(PlayerDB.club_id == club_id)
+        )
+        return list(result.scalars().all()) #con el .all() hago que traiga todo junto, no que lo haga de manera iterativa
