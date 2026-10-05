@@ -32,7 +32,6 @@ from app.security_api import get_token_bearerAuth
 from app.db.club import ClubDB
 from app.dependencies import get_current_club
 
-
 router = APIRouter()
 
 ns_pkg = app.impl
@@ -51,13 +50,11 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
     response_model_by_alias=True,
 )
 async def list_my_players(
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    club: ClubDB = Security(get_current_club),
 ) -> List[Player]:
     if not BasePlayersApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BasePlayersApi.subclasses[0]().list_my_players()
+    return await BasePlayersApi.subclasses[0]().list_my_players(club.id)
 
 
 @router.post(

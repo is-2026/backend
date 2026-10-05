@@ -55,3 +55,23 @@ class PlayerApiImpl(BasePlayersApi):
                 speed=player.speed,
                 strength=player.strength,
             )
+
+    async def list_my_players(self, 
+                              club_id : uuid.UUID
+                              )-> list[Player]:
+        async with SessionLocal() as session:
+            players = await PlayerRepository(session).list_players_club(club_id)
+            return [
+                Player(
+                    id= pl.id,
+                    name=pl.name,
+                    number=pl.number,
+                    power=pl.power,
+                    agility=pl.agility,
+                    control=pl.control,
+                    speed=pl.speed,
+                    strength=pl.strength,
+                )
+                for pl in players
+            ]
+        

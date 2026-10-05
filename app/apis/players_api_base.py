@@ -17,6 +17,7 @@ class BasePlayersApi:
         BasePlayersApi.subclasses = BasePlayersApi.subclasses + (cls,)
     async def list_my_players(
         self,
+        club_id : UUID
     ) -> List[Player]:
         ...
 
