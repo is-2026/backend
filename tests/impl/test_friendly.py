@@ -41,21 +41,55 @@ def test_validate_squad_error_titulares(starters):
 async def test_list_friendlies_returns_list(mocked_repo_class):
     mocked_repo = MagicMock()
     
-    # creamos amistosos mockeados
+    # Valores de prueba
+    friendly_id_1 = uuid.uuid4()
+    club_id_1 = uuid.uuid4()
+    friendly_id_2 = uuid.uuid4()
+    club_id_2 = uuid.uuid4()
+
+    # Creamos amistosos mockeados con los atributos que lee el endpoint
     mock_friendly_1 = MagicMock()
+    mock_friendly_1.id = friendly_id_1
+    mock_friendly_1.creator_club_id = club_id_1
+    mock_friendly_1.rival_club_id = None
+    mock_friendly_1.status = "waiting_for_rival"
+    mock_friendly_1.match_id = None
+
     mock_friendly_2 = MagicMock()
+    mock_friendly_2.id = friendly_id_2
+    mock_friendly_2.creator_club_id = club_id_2
+    mock_friendly_2.rival_club_id = None
+    mock_friendly_2.status = "waiting_for_rival"
+    mock_friendly_2.match_id = None
+
     fake_list = [mock_friendly_1, mock_friendly_2]
     
-    # configuramos para que nos devuelva fake_list
+    # Configuramos el mock del repositorio
     mocked_repo.list_available_friendlies = AsyncMock(return_value=fake_list)
+    
+    # Configuramos el comportamiento del método is_private
+    def mock_is_private(f):
+        return f == mock_friendly_2  # El primero es público, el segundo privado
+    mocked_repo.is_private.side_effect = mock_is_private
+    
     mocked_repo_class.return_value = mocked_repo
 
-    # listamos amistosos
+    # Listamos amistosos
     api = FriendliesApiImpl(MagicMock())
     result = await api.list_friendlies()
 
-    assert result == fake_list
+    # Comprobamos la respuesta mapeada a los modelos Pydantic
     assert len(result) == 2
+    
+    assert result[0].id == friendly_id_1
+    assert result[0].creator_club_id == club_id_1
+    assert result[0].is_private is False
+    assert result[0].status == "waiting_for_rival"
+
+    assert result[1].id == friendly_id_2
+    assert result[1].creator_club_id == club_id_2
+    assert result[1].is_private is True
+    assert result[1].status == "waiting_for_rival"
     
     mocked_repo.list_available_friendlies.assert_awaited_once()
 
