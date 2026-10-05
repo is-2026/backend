@@ -21,8 +21,15 @@ async def friendly_lobby(
     if user_id is None:
         return
 
-    async with SessionLocal() as session: #abro una session corta para la consulta
-        friendly = await FriendlyRepository(session).get(friendly_id)
+    async with SessionLocal() as session:
+        repo = FriendlyRepository(session)
+        friendly = await repo.get(friendly_id)
+        rival_name = (
+            await repo.get_club_name(friendly.rival_club_id)
+            if friendly is not None and friendly.rival_club_id is not None
+            else None
+        )
+
     if friendly is None:
         await ws.close(code=NOT_FOUND)
         return
