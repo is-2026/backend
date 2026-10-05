@@ -10,6 +10,7 @@ from starlette.websockets import WebSocketDisconnect
 from app.security.tokens import create_access_token
 from app.ws import friendlies_ws
 from app.ws.lobby_friendly import lobby_connection
+from types import SimpleNamespace
 
 EXISTING_FRIENDLY = uuid.uuid4()
 
@@ -24,12 +25,17 @@ class _FakeSession: #para simular la consulta
 class _FakeFriendlyRepository:
     """Solo existe EXISTING_FRIENDLY."""
 
-    def __init__(self, session):
-        pass
-
+    def __init__(self, session=None):
+        self.session = session
+ 
     async def get(self, friendly_id):
-        return object() if friendly_id == EXISTING_FRIENDLY else None # hacemos Stubbing
+        if friendly_id != EXISTING_FRIENDLY:
+            return None
+        # el endpoint lee rival_club_id: sin rival todavía
+        return SimpleNamespace(rival_club_id=None)
 
+    async def get_club_name(self, club_id):
+        return "Rival FC"
 
 @pytest.fixture(autouse=True)
 def clean_lobby():

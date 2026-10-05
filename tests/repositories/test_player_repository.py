@@ -52,4 +52,31 @@ async def test_create_jersey_number_used_it_fail_commit():
   
     session.rollback.assert_awaited_once()  #confirma que el rollback ocurrio
 
+async def test_list_players_club_returns_players():
+    club_id = uuid.uuid4()
+    jugadores = [MagicMock(), MagicMock()]
+
+    result = MagicMock()  # mockeo el resultado
+    result.scalars.return_value.all.return_value = jugadores
+
+    session = MagicMock() 
+    session.execute = AsyncMock(return_value=result)
+
+    players = await PlayerRepository(session).list_players_club(club_id)
+
+    assert players == jugadores
+    session.execute.assert_awaited_once()
+
+async def test_list_players_club_empty():
+    club_id = uuid.uuid4()
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+
+    session = MagicMock()
+    session.execute = AsyncMock(return_value=result)
+
+    players = await PlayerRepository(session).list_players_club(club_id)
+
+    assert players == []
+
 #Ejecutar test con : python -m pytest tests/repositories -v
