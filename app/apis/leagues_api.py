@@ -34,6 +34,10 @@ from app.models.match import Match
 from app.models.standings_item import StandingsItem
 from app.models.extra_models import TokenModel  # noqa: F401
 from app.security_api import get_token_bearerAuth
+from app.db.session import get_session
+from app.db.club import ClubDB
+from app.dependencies import get_current_club
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -76,14 +80,13 @@ async def list_leagues(
 )
 async def create_league(
     create_league_input: CreateLeagueInput = Body(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
 ) -> LeagueDetail:
     """Notar que la cantidad de clubes tiene un mínimo duro de 3. Si se envía password, la liga se considera privada."""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().create_league(create_league_input)
+    return await BaseLeaguesApi.subclasses[0](session).create_league(create_league_input, club.id)
 
 
 @router.get(

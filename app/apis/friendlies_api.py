@@ -33,7 +33,6 @@ from app.security_api import get_token_bearerAuth
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
 from app.db.club import ClubDB
-from app.dependencies import get_current_club
 from app.dependencies import get_current_club, get_lobby_manager
 from app.ws.connection_manager import ConnectionManager
 
