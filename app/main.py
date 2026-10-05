@@ -25,9 +25,12 @@ from app.apis.match_api import router as MatchApiRouter
 from app.apis.players_api import router as PlayersApiRouter
 from app.apis.ranking_api import router as RankingApiRouter
 from app.apis.user_api import router as UserApiRouter
+from app.ws.friendlies_ws import router as FriendliesWSRouter
+from app.ws.match.router import router as MatchWsRouter
+from fastapi.middleware.cors import CORSMiddleware
 from app.db.session import check_connection, engine
 from app.errors import register_exception_handlers
-from app.ws.match.router import router as MatchWsRouter
+
 
 
 @asynccontextmanager
@@ -67,4 +70,5 @@ app.include_router(MatchApiRouter)
 app.include_router(PlayersApiRouter)
 app.include_router(RankingApiRouter)
 app.include_router(UserApiRouter)
+app.include_router(FriendliesWSRouter)
 app.include_router(MatchWsRouter)

@@ -1,10 +1,13 @@
 import uuid, enum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKey, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.db.club import ClubDB 
+
+if TYPE_CHECKING:  # solo para el type checker: importarlo de verdad arma un ciclo con club -> base -> match
+    from app.db.club import ClubDB
 
 
 class MatchStatus(str, enum.Enum):
@@ -44,12 +47,12 @@ class MatchDB(Base):
 
     # RELATIONSHIPS --
     # 1 partido tiene 1 club local
-    home_club: Mapped[ClubDB] = relationship(
+    home_club: Mapped["ClubDB"] = relationship(
         foreign_keys=[home_club_id], 
         back_populates="home_matches"
     )
     # 1 partido tiene 1 club visitante
-    away_club: Mapped[ClubDB] = relationship(
+    away_club: Mapped["ClubDB"] = relationship(
         foreign_keys=[away_club_id], 
         back_populates="away_matches"
     )

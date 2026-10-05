@@ -34,6 +34,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
 from app.db.club import ClubDB
 from app.dependencies import get_current_club
+from app.dependencies import get_current_club, get_lobby_manager
+from app.ws.connection_manager import ConnectionManager
 
 router = APIRouter()
 
@@ -57,11 +59,12 @@ async def list_friendlies(
         get_token_bearerAuth
     ),
     session: AsyncSession = Depends(get_session),
+    lobby: ConnectionManager = Depends(get_lobby_manager)
 ) -> List[Friendly]:
     """Devuelve una lista de amistosos que están esperando rival, incluyendo públicos y privados."""
     if not BaseFriendliesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseFriendliesApi.subclasses[0](session).list_friendlies()
+    return await BaseFriendliesApi.subclasses[0](session, lobby).list_friendlies()
 
 
 @router.post(
@@ -79,11 +82,12 @@ async def create_friendly(
     create_friendly_input: CreateFriendlyInput = Body(..., description=""),
     club: ClubDB = Security(get_current_club),
     session: AsyncSession = Depends(get_session),
+    lobby: ConnectionManager = Depends(get_lobby_manager)
 ) -> Friendly:
     """Crea un amistoso esperando por un rival. Si se envía password, el amistoso se marca como privado."""
     if not BaseFriendliesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseFriendliesApi.subclasses[0]().create_friendly(create_friendly_input, club.id)
+    return await BaseFriendliesApi.subclasses[0](session, lobby).create_friendly(create_friendly_input, club.id)
 
 
 @router.post(
@@ -102,14 +106,14 @@ async def create_friendly(
 async def join_friendly(
     friendly_id: UUID = Path(..., description=""),
     join_friendly_input: JoinFriendlyInput = Body(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
+    lobby: ConnectionManager = Depends(get_lobby_manager)
 ) -> Friendly:
     """Se une a un amistoso creado por otro club. Si es privado, requiere la contraseña. Al unirse exitosamente, se genera el partido."""
     if not BaseFriendliesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseFriendliesApi.subclasses[0]().join_friendly(friendly_id, join_friendly_input)
+    return await BaseFriendliesApi.subclasses[0](session, lobby).join_friendly(friendly_id, join_friendly_input, club.id)
 
 
 @router.delete(
