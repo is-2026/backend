@@ -3,6 +3,7 @@ import logging
 import random
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from app.engine.behavior_exec import PlayerBrain, create_brains, decide_actions
 from app.engine.constants import DT
@@ -10,8 +11,10 @@ from app.engine.engine import kickoff, step
 from app.engine.state import MatchState
 from app.ws.connection_manager import ConnectionManager
 from app.ws.match.messages import (
+    MatchInfo,
     goal_message,
     match_finished_message,
+    match_started_message,
     match_state_message,
 )
 
@@ -25,6 +28,9 @@ class LiveMatch:
     match_id: uuid.UUID
     state: MatchState
     brains: dict[str, PlayerBrain]
+    # lo fijo de matchStarted (clubes y alineaciones)
+    info: MatchInfo
+    match_start: datetime  # cuándo termina la espera y empieza a correr el partido
     # último matchState ya serializado, para el que se conecta
     last_state: dict | None = None
     # referencia a la tarea, si nadie la guarda, se puede perder
@@ -40,6 +46,7 @@ def start_match(
     match_id: uuid.UUID,
     state: MatchState,
     codes: dict[str, str],
+    info: MatchInfo,
     *,
     tick_interval: float = DT,
     start_delay: float = START_DELAY_SECONDS,
@@ -51,7 +58,13 @@ def start_match(
         return live_matches[match_id]  # ya se está jugando: no lo largamos dos veces
 
     kickoff(state)
-    live = LiveMatch(match_id=match_id, state=state, brains=create_brains(state, codes))
+    live = LiveMatch(
+        match_id=match_id,
+        state=state,
+        brains=create_brains(state, codes),
+        info=info,
+        match_start=datetime.now(timezone.utc) + timedelta(seconds=start_delay),
+    )
     # el que se conecta durante la espera ya ve a los jugadores en formación (tick 0)
     live.last_state = _state_payload(live)
     live_matches[match_id] = live
@@ -106,3 +119,12 @@ async def run_match(
 def _state_payload(live: LiveMatch) -> dict:
     """matchState del estado actual, listo para mandar."""
     return match_state_message(str(live.match_id), live.state).model_dump(mode="json")
+
+
+def started_payload(live: LiveMatch) -> dict:
+    """matchStarted para el que se acaba de conectar, con el tick y marcador de ahora.
+    exclude_none: los suplentes no llevan behavior_id/behavior_name (en vez de null)."""
+    message = match_started_message(
+        str(live.match_id), live.info, live.match_start, live.state
+    )
+    return message.model_dump(mode="json", exclude_none=True)

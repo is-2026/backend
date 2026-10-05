@@ -4,7 +4,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.ws.auth import authenticate
 from app.ws.close_codes import NORMAL, NOT_FOUND
-from app.ws.match.runner import live_matches, match_connections
+from app.ws.match.runner import live_matches, match_connections, started_payload
 
 router = APIRouter()
 
@@ -23,7 +23,8 @@ async def match_stream(
         return
 
     try:
-        # primero el último estado y después anotarlo así no le llega un tick viejo después de uno nuevo
+        # primero matchStarted y el último estado, y después anotarlo así no le llega un tick viejo después de uno nuevo
+        await match_connections.send(websocket, started_payload(live))
         await match_connections.send(websocket, live.last_state)
         if match_id not in live_matches:
             # terminó mientras le mandábamos el estado: ya nadie lo va a cerrar
