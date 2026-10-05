@@ -51,7 +51,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
         if owned != SQUAD_SIZE:
             raise HTTPException(status_code=400, detail="Hay jugadores que no pertenecen a tu club")
         
-        hashed = hash_password(create_league_input.password) if create_league_input.password else None
+        hashed = await hash_password(create_league_input.password) if create_league_input.password else None
         
         try:
             league = await LeagueRepository(self._session).create_with_enrollment(
