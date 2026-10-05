@@ -4,7 +4,9 @@ from sqlalchemy import ForeignKey, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.db.club import ClubDB 
+
+if TYPE_CHECKING:  # solo para el type checker: importarlo de verdad arma un ciclo con club -> base -> match
+    from app.db.club import ClubDB
 
 
 class MatchStatus(str, enum.Enum):
