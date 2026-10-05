@@ -24,11 +24,25 @@ def _validate_squad(players: list[SquadPlayerInput] ) -> None:
         raise HTTPException(status_code=400, detail="Hay jugadores titulares sin comportamiento asignado")
     
 class FriendliesApiImpl(BaseFriendliesApi):
-    async def list_friendlies(self) -> list[Friendly]:
-        raise NotImplementedError
-    
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+
+    async def list_friendlies(self) -> list[Friendly]:
+        repo = FriendlyRepository(self._session)
+        friendlies = await repo.list_available_friendlies()
+        return [
+            Friendly(
+                id=f.id,
+                creator_club_id=f.creator_club_id,
+                rival_club_id=f.rival_club_id,
+                is_private=repo.is_private(f),
+                status=f.status,
+                match_id=f.match_id
+            )
+            for f in friendlies
+        ]
+
 
     async def create_friendly(self, 
                             create_friendly_input: CreateFriendlyInput,
