@@ -29,8 +29,19 @@ class FriendliesApiImpl(BaseFriendliesApi):
 
 
     async def list_friendlies(self) -> list[Friendly]:
-        friendly_list = await FriendlyRepository(self._session).list_available_friendlies()
-        return friendly_list
+        repo = FriendlyRepository(self._session)
+        friendlies = await repo.list_available_friendlies()
+        return [
+            Friendly(
+                id=f.id,
+                creator_club_id=f.creator_club_id,
+                rival_club_id=f.rival_club_id,
+                is_private=repo.is_private(f),
+                status=f.status,
+                match_id=f.match_id
+            )
+            for f in friendlies
+        ]
 
 
     async def create_friendly(self, 
