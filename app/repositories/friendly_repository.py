@@ -15,6 +15,9 @@ class SquadPlayerData(NamedTuple):
 class InvalidSquad(Exception):
     """La convocatoria no es valida (jugadores repetidos/inexistentes)"""
 
+class FriendlyUnavailable(Exception):
+    """El amistoso ya tiene rival o fue cancelado"""
+
 class FriendlyRepository:
     def __init__(self, session : AsyncSession) -> None:
         self._session = session
