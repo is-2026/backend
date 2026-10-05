@@ -23,14 +23,20 @@ def client():
 
 
 @pytest.fixture
-def match_id(client, match_state):
+def match_id(client, match_state, match_info):
     """Arranca un partido corto (20 ticks) y devuelve su id."""
     match_id = uuid.uuid4()
     match_state.total_ticks = 20
     # start_match necesita el event loop de la app: portal.call la corre ahí
     client.portal.call(
         partial(
-            start_match, match_id, match_state, {}, tick_interval=0.01, start_delay=0.2
+            start_match,
+            match_id,
+            match_state,
+            {},
+            match_info,
+            tick_interval=0.01,
+            start_delay=0.2,
         )
     )
     # client.portal.call(...) existe porque start_match usa create_task, que necesita el event loop de la app.
@@ -65,7 +71,9 @@ def test_two_clients_receive_the_whole_match(client, match_id):
         messages2, code2 = receive_until_closed(ws2)
 
     assert messages1 == messages2
-    assert messages1[0]["data"]["tick"] == 0  # al conectarse recibe el estado inicial
+    # al conectarse: matchStarted y el estado inicial
+    assert [m["type"] for m in messages1[:2]] == ["matchStarted", "matchState"]
+    assert messages1[1]["data"]["tick"] == 0
     assert messages1[-1]["type"] == "matchFinished"
     assert code1 == NORMAL
     assert code2 == NORMAL
@@ -74,7 +82,8 @@ def test_two_clients_receive_the_whole_match(client, match_id):
 def test_if_one_client_leaves_the_other_keeps_receiving(client, match_id):
     with connect(client, match_id) as ws1:
         with connect(client, match_id) as ws2:
-            ws2.receive_json()
+            ws2.receive_json()  # matchStarted
+            ws2.receive_json()  # matchState
         # ws2 ya se fue
         messages, code = receive_until_closed(ws1)
 
@@ -84,10 +93,26 @@ def test_if_one_client_leaves_the_other_keeps_receiving(client, match_id):
 
 def test_late_client_starts_from_current_tick(client, match_id):
     with connect(client, match_id) as ws1:
-        for _ in range(6):  # ws1 va a leer tick 0 hasta tick 5
+        for _ in range(7):  # ws1 va a leer matchStarted y del tick 0 al tick 5
             ws1.receive_json()
         with connect(client, match_id) as ws2:
+            started = ws2.receive_json()
             first = ws2.receive_json()
 
+    assert started["type"] == "matchStarted"
+    assert started["data"]["tick"] >= 5
     assert first["type"] == "matchState"
-    assert first["data"]["tick"] >= 5
+    assert first["data"]["tick"] >= started["data"]["tick"]
+
+
+def test_match_started_has_clubs_and_lineups(client, match_id):
+    with connect(client, match_id) as ws:
+        started = ws.receive_json()
+
+    data = started["data"]
+    assert started["type"] == "matchStarted"
+    assert data["match_id"] == str(match_id)
+    assert data["home_club"] == {"id": "club-local", "name": "Local", "avatar_url": "https://x/local.png"}
+    assert len(data["home_lineup"]) == len(data["away_lineup"]) == 6
+    assert data["total_ticks"] == 20
+    assert data["status"] == "in_progress"

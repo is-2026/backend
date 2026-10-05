@@ -19,10 +19,10 @@ async def make_club_with_squad(session, name):
     user = UserDB(id=uuid.uuid4(), email=f"{name}@x.com", hashed_password="h")
     session.add(user)
     await session.flush()
-    club = ClubDB(id=uuid.uuid4(), club_name=name, avatar_url="a", user_id=user.id)
+    club = ClubDB(id=uuid.uuid4(), club_name=name, avatar_url=f"https://x/{name}.png", user_id=user.id)
     session.add(club)
     await session.flush()
-    behavior = BehaviorDB(id=uuid.uuid4(), name="b", code=DEFAULT_BEHAVIORS[0].code, club_id=club.id)
+    behavior = BehaviorDB(id=uuid.uuid4(), name="Atacante", code=DEFAULT_BEHAVIORS[0].code, club_id=club.id)
     players = [
         PlayerDB(id=uuid.uuid4(), name=f"J{i}", number=i, power=60, agility=60,
                  control=60, speed=60, strength=60, club_id=club.id)
@@ -39,6 +39,7 @@ async def match_id(session):
     home, home_b, home_players = await make_club_with_squad(session, "local")
     away, away_b, away_players = await make_club_with_squad(session, "visita")
     session.add(MatchDB(id=match_id, home_club_id=home, away_club_id=away))
+    await session.flush()  # el partido antes que el amistoso (FK friendlies.match_id)
     session.add(FriendlyDB(id=friendly_id, creator_club_id=home, rival_club_id=away,
                            status="accepted", match_id=match_id))
     await session.flush()
@@ -58,7 +59,9 @@ async def get_match(session_factory, match_id):
         return await s.get(MatchDB, match_id)
 
 
-async def test_start_registers_match_and_sets_in_progress(session_factory, match_id, monkeypatch):
+async def test_start_registers_match_with_info_and_sets_in_progress(
+    session_factory, match_id, monkeypatch
+):
     monkeypatch.setattr(
         starter_module, "start_match",
         functools.partial(start_match, start_delay=60),  # que no arranque durante el test
@@ -69,6 +72,8 @@ async def test_start_registers_match_and_sets_in_progress(session_factory, match
 
     live = live_matches[match_id]
     assert len(live.state.players) == 6
+    assert (live.info.home_club.name, live.info.away_club.name) == ("local", "visita")
+    assert len(live.info.home_lineup) == len(live.info.away_lineup) == 6
     assert (await get_match(session_factory, match_id)).status == MatchStatus.in_progress
     live.task.cancel()
 

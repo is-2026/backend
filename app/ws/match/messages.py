@@ -30,6 +30,50 @@ class MatchStateMessage(BaseModel):
     data: MatchStateData
 
 
+class ClubSummary(BaseModel):
+    id: str
+    name: str
+    avatar_url: str
+
+
+class LineupPlayer(BaseModel):
+    player_id: str
+    number: int
+    name: str
+    is_starter: bool
+    power: int
+    agility: int
+    control: int
+    speed: int
+    strength: int
+    behavior_id: str | None = None  # los suplentes no tienen
+    behavior_name: str | None = None
+
+
+class MatchInfo(BaseModel):
+    """Lo que no cambia durante el partido: clubes y alineaciones."""
+
+    home_club: ClubSummary
+    away_club: ClubSummary
+    home_lineup: list[LineupPlayer]
+    away_lineup: list[LineupPlayer]
+
+
+class MatchStartedData(MatchInfo):
+    match_id: str
+    match_start: datetime
+    tick: int
+    total_ticks: int
+    home_score: int
+    away_score: int
+    status: Literal["in_progress", "paused", "finished"] = "in_progress"
+
+
+class MatchStartedMessage(BaseModel):
+    type: Literal["matchStarted"] = "matchStarted"
+    data: MatchStartedData
+
+
 class GoalData(BaseModel):
     match_id: str
     tick: int
@@ -57,6 +101,23 @@ class MatchFinishedData(BaseModel):
 class MatchFinishedMessage(BaseModel):
     type: Literal["matchFinished"] = "matchFinished"
     data: MatchFinishedData
+
+
+def match_started_message(
+    match_id: str, info: MatchInfo, match_start: datetime, state: MatchState
+) -> MatchStartedMessage:
+    """Lo fijo sale de `info`; tick y marcador, del estado en este momento."""
+    return MatchStartedMessage(
+        data=MatchStartedData(
+            **dict(info),
+            match_id=match_id,
+            match_start=match_start,
+            tick=state.tick,
+            total_ticks=state.total_ticks,
+            home_score=state.home_score,
+            away_score=state.away_score,
+        )
+    )
 
 
 def match_state_message(match_id: str, state: MatchState) -> MatchStateMessage:

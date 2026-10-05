@@ -1,3 +1,4 @@
+import uuid
 import pytest
 from sqlalchemy import func, select
 
@@ -80,3 +81,16 @@ async def test_create_with_existing_club_raises_club_exists(
         behaviors = await other.scalar(select(func.count()).select_from(BehaviorDB))
     assert clubs == 1
     assert behaviors == len(default_behaviors)
+
+async def test_get_by_id(session, user, default_behaviors):
+    club = await ClubRepository(session).create(
+        user.id, CLUB_NAME, AVATAR_URL, default_behaviors
+    )
+
+    found = await ClubRepository(session).get_by_id(club.id)
+
+    assert found.club_name == CLUB_NAME
+
+
+async def test_get_by_id_unknown_returns_none(session):
+    assert await ClubRepository(session).get_by_id(uuid.uuid4()) is None

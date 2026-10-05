@@ -2,61 +2,104 @@ import uuid
 
 import pytest
 
+from app.db.behavior import BehaviorDB
+from app.db.club import ClubDB
 from app.db.match import MatchDB
 from app.db.player import PlayerDB
 from app.engine.constants import FRIENDLY_TOTAL_TICKS
 from app.engine.engine import kickoff
 from app.engine.state import Side
-from app.repositories.friendly_repository import StarterData
-from app.ws.match.starter import InvalidLineup, build_match_state
+from app.repositories.friendly_repository import SquadMember
+from app.ws.match.starter import InvalidLineup, build_match_info, build_match_state
 
 
-def make_starter(club_id, number, code="def decide_action(): pass"):
+def make_member(club_id, number, is_starter):
     player = PlayerDB(
         id=uuid.uuid4(), name=f"J{number}", number=number,
         power=60, agility=60, control=60, speed=60, strength=60, club_id=club_id,
     )
-    return StarterData(club_id=club_id, player=player, code=code)
+    behavior = (
+        BehaviorDB(id=uuid.uuid4(), name=f"B{number}", code=f"code{number}", club_id=club_id)
+        if is_starter else None
+    )
+    return SquadMember(club_id=club_id, player=player, is_starter=is_starter, behavior=behavior)
+
+
+def make_squad(club_id):
+    """Titulares 1, 2, 3 (con comportamiento) y suplentes 4, 5, 6."""
+    return [make_member(club_id, n, n <= 3) for n in range(1, 7)]
 
 
 @pytest.fixture
-def match():
-    return MatchDB(id=uuid.uuid4(), home_club_id=uuid.uuid4(), away_club_id=uuid.uuid4())
+def home_club():
+    return ClubDB(id=uuid.uuid4(), club_name="Local", avatar_url="https://x/local.png")
 
 
 @pytest.fixture
-def starters(match):
-    home = [make_starter(match.home_club_id, n, f"home{n}") for n in (1, 2, 3)]
-    away = [make_starter(match.away_club_id, n, f"away{n}") for n in (1, 2, 3)]
-    return away + home  # mezclados a propósito
+def away_club():
+    return ClubDB(id=uuid.uuid4(), club_name="Visita", avatar_url="https://x/visita.png")
 
 
-def test_build_match_state_splits_sides(match, starters):
-    state, _ = build_match_state(match, starters)
+@pytest.fixture
+def match(home_club, away_club):
+    return MatchDB(id=uuid.uuid4(), home_club_id=home_club.id, away_club_id=away_club.id)
+
+
+@pytest.fixture
+def squad(home_club, away_club):
+    return make_squad(away_club.id) + make_squad(home_club.id)  # visitante primero a propósito
+
+
+def test_build_match_state_only_starters_split_by_side(match, squad):
+    state, _ = build_match_state(match, squad)
 
     assert state.home_team_id == str(match.home_club_id)
     assert state.away_team_id == str(match.away_club_id)
     assert [p.side for p in state.players] == [Side.HOME] * 3 + [Side.AWAY] * 3
+    starters = {str(m.player.id) for m in squad if m.is_starter}
+    assert {p.id for p in state.players} == starters
     assert state.total_ticks == FRIENDLY_TOTAL_TICKS == 3000
 
 
-def test_build_match_state_codes_by_player_id(match, starters):
-    _, codes = build_match_state(match, starters)
+def test_build_match_state_codes_by_player_id(match, squad):
+    _, codes = build_match_state(match, squad)
 
-    assert codes == {str(s.player.id): s.code for s in starters}
+    assert codes == {str(m.player.id): m.behavior.code for m in squad if m.is_starter}
 
 
-def test_order_decides_formation_position(match, starters):
-    state, _ = build_match_state(match, starters)
+def test_order_decides_formation_position(match, squad):
+    state, _ = build_match_state(match, squad)
     kickoff(state)
 
     first_home = state.players[0]
     first_away = state.players[3]
-    assert first_home.id == str(starters[3].player.id)
+    assert first_home.id == str(squad[6].player.id)  # el primer titular del local
     assert (first_home.x, first_home.y) == (-4.0, 0.0)
     assert (first_away.x, first_away.y) == (4.0, 0.0)
 
 
-def test_missing_starter_raises(match, starters):
+def test_missing_starter_raises(match, squad):
     with pytest.raises(InvalidLineup):
-        build_match_state(match, starters[1:])
+        build_match_state(match, squad[1:])
+
+
+def test_starter_without_behavior_raises(match, squad):
+    squad[0] = squad[0]._replace(behavior=None)
+    with pytest.raises(InvalidLineup):
+        build_match_state(match, squad)
+
+
+def test_build_match_info(home_club, away_club, squad):
+    info = build_match_info(home_club, away_club, squad)
+
+    assert info.home_club.model_dump() == {
+        "id": str(home_club.id), "name": "Local", "avatar_url": "https://x/local.png",
+    }
+    assert info.away_club.name == "Visita"
+    assert [p.number for p in info.home_lineup] == [1, 2, 3, 4, 5, 6]
+    assert [p.player_id for p in info.away_lineup] == [str(m.player.id) for m in squad[:6]]
+
+    starter, sub = info.home_lineup[0], info.home_lineup[3]
+    assert starter.is_starter and starter.behavior_name == "B1"
+    assert starter.behavior_id == str(squad[6].behavior.id)
+    assert not sub.is_starter and sub.behavior_id is None

@@ -56,3 +56,6 @@ class ClubRepository:
             select(ClubDB).where(ClubDB.user_id == user_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_by_id(self, club_id: uuid.UUID) -> ClubDB | None:
+        return await self._session.get(ClubDB, club_id)
