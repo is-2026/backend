@@ -27,3 +27,6 @@ BALL_STOP_SPEED = 0.1  # m/s, por debajo se considera quieta
 
 # Posiciones iniciales del local (formación TRIANGLE) el visitante las espeja
 TRIANGLE_HOME = ((-4.0, 0.0), (-12.0, -5.0), (-12.0, 5.0))
+
+# Cada remate se desvía al azar hasta este ángulo para cada lado
+SHOT_SPREAD_DEG = 25.0
