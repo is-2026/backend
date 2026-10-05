@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.security.passwords import hash_password, verify_password
 from app.ws.connection_manager import ConnectionManager
 
-
+INTERNAL_ERROR = 1011
 LOBBY_WINDOW_SECONDS = 30
 _background_tasks : set[asyncio.Task] = set()  #guarda la referencia a los timers, se agrega al set para que asyncio no lo borre antes
 
@@ -176,16 +176,17 @@ class FriendliesApiImpl(BaseFriendliesApi):
                                   match_id : uuid.UUID) -> None:
         try:
             await asyncio.sleep(self._window)
+            if self._match_runner is not None:
+                            await self._match_runner.start(match_id) # primero queda en live_matches
             await self._lobby.broadcast(friendly_id, {
                 "type": "friendlyStart",
                 "data": {"friendly_id": str(friendly_id), "match_id": str(match_id)},
             })
             await self._lobby.close_all(friendly_id) #cierra los ws 
-            if self._match_runner is not None:
-                await self._match_runner.start(match_id)
         except Exception:
             logging.exception("Falló el inicio del amistoso %s", friendly_id)
-
+            await self._lobby.close_all(friendly_id, code=INTERNAL_ERROR)
+            
     async def cancel_friendly(self, friendly_id: uuid.UUID) -> None:
         raise NotImplementedError
                     
