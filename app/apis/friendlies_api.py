@@ -59,11 +59,12 @@ async def list_friendlies(
         get_token_bearerAuth
     ),
     session: AsyncSession = Depends(get_session),
+    lobby: ConnectionManager = Depends(get_lobby_manager)
 ) -> List[Friendly]:
     """Devuelve una lista de amistosos que están esperando rival, incluyendo públicos y privados."""
     if not BaseFriendliesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseFriendliesApi.subclasses[0](session).list_friendlies()
+    return await BaseFriendliesApi.subclasses[0](session, lobby).list_friendlies()
 
 
 @router.post(

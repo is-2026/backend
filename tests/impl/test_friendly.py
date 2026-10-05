@@ -341,7 +341,7 @@ async def test_list_friendlies_returns_list(mocked_repo_class):
     mocked_repo_class.return_value = mocked_repo
 
     # Listamos amistosos
-    api = FriendliesApiImpl(MagicMock())
+    api = FriendliesApiImpl(MagicMock(), lobby_manager=MagicMock())
     result = await api.list_friendlies()
 
     # Comprobamos la respuesta mapeada a los modelos Pydantic
@@ -369,7 +369,7 @@ async def test_list_friendlies_returns_empty(mocked_repo_class):
     mocked_repo_class.return_value = mocked_repo
 
     # listamos amistosos
-    api = FriendliesApiImpl(MagicMock())
+    api = FriendliesApiImpl(MagicMock(), lobby_manager=MagicMock())
     result = await api.list_friendlies()
 
     assert result == []
