@@ -1,5 +1,5 @@
 import uuid
- 
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +24,17 @@ class FriendlyUnavailable(Exception):
 class FriendlyRepository:
     def __init__(self, session : AsyncSession) -> None:
         self._session = session
- 
+
+    def is_private(self, friendly: FriendlyDB) -> bool:
+        # true si hay una contraseña guardada, false si es None
+        return bool(friendly.hashed_password)
+
+    async def list_available_friendlies(self) -> list[FriendlyDB]:
+        consult = select(FriendlyDB).where(FriendlyDB.status == "waiting_for_rival")
+        result = await self._session.execute(consult)
+        return list(result.scalars().all())
+    
+    
     async def create(
                     self,
                     creator_club_id: uuid.UUID,

@@ -1,11 +1,11 @@
 import random
-from math import hypot
+from math import atan2, degrees, hypot
 
 import pytest
 
 from app.engine.actions import Move, PassTo, Shoot, ShootAtGoal
-from app.engine.constants import BALL_FRICTION
-from app.engine.engine import step
+from app.engine.constants import BALL_FRICTION, SHOT_SPREAD_DEG
+from app.engine.engine import _shot_error, step
 from app.engine.state import Side
 from tests.engine.conftest import make_player
 
@@ -25,8 +25,9 @@ def test_shoot_sets_ball_speed(state, rng, power_pct):
 
     step(state, {h1.id: Shoot(1, 0, power_pct)}, rng)
 
-    assert state.ball.vx == pytest.approx(SHOT_SPEED_AFTER_TICK)
-    assert state.ball.vy == pytest.approx(0.0)
+    # el desvío cambia la dirección, no la velocidad
+    assert hypot(state.ball.vx, state.ball.vy) == pytest.approx(SHOT_SPEED_AFTER_TICK)
+    assert abs(degrees(atan2(state.ball.vy, state.ball.vx))) <= SHOT_SPREAD_DEG
 
 
 def test_kick_sets_last_touch_and_cooldown(state, rng):
@@ -56,7 +57,15 @@ def test_shoot_at_goal_aims_at_rival_goal(
     step(state, {player.id: ShootAtGoal()}, rng)
 
     assert (state.ball.vx > 0) == goes_right
-    assert state.ball.vy == pytest.approx(0.0)  # va derecho al centro del arco
+
+
+def test_shot_error_stays_within_spread():
+    errors = [degrees(_shot_error(random.Random(seed))) for seed in range(200)]
+
+    assert all(abs(e) <= SHOT_SPREAD_DEG for e in errors)
+    # se desvía para los dos lados y usa casi todo el rango
+    assert min(errors) < -SHOT_SPREAD_DEG * 0.9
+    assert max(errors) > SHOT_SPREAD_DEG * 0.9
 
 
 def test_pass_reaches_teammate(state, rng):

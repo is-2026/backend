@@ -1,5 +1,5 @@
 import random
-from math import copysign, hypot
+from math import copysign, cos, hypot, radians, sin
 
 from app.engine.actions import Action, Move, PassTo, Shoot, ShootAtGoal
 from app.engine.constants import (
@@ -15,10 +15,9 @@ from app.engine.constants import (
     FIELD_HALF_WIDTH,
     GOAL_HALF_WIDTH,
     KICK_SPEED_RANGE,
+    SHOT_SPREAD_DEG,
     SPEED_MAX_RANGE,
     TICKS_PER_MINUTE,
-    TICKS_PER_SECOND,
-    TRIANGLE_HOME,
 )
 from app.engine.events import GoalEvent
 from app.engine.state import BallState, MatchState, PlayerState, Side
@@ -157,6 +156,15 @@ def _can_kick(player: PlayerState, action: Action | None, ball: BallState) -> bo
     return distance <= control_radius(player.control)
 
 
+def _rotate(x: float, y: float, angle: float) -> tuple[float, float]:
+    return x * cos(angle) - y * sin(angle), x * sin(angle) + y * cos(angle)
+
+
+def _shot_error(rng: random.Random) -> float:
+    """Ángulo aleatorio (en radianes) que se desvía un remate."""
+    return radians(rng.uniform(-SHOT_SPREAD_DEG, SHOT_SPREAD_DEG))
+
+
 def _resolve_kicks(
     state: MatchState, actions: dict[str, Action], rng: random.Random
 ) -> None:
@@ -178,15 +186,17 @@ def _resolve_kicks(
         pct = _clamp(action.power_pct, 0, 100) / 100
         vx = x_normalized * speed_power * pct
         vy = y_normalized * speed_power * pct
+        vx, vy = _rotate(vx, vy, _shot_error(rng))
 
     elif isinstance(action, ShootAtGoal):
         goal_x = FIELD_HALF_LENGTH if winner.side == Side.HOME else -FIELD_HALF_LENGTH
         dx = goal_x - ball.x
-        dy = -ball.y
+        dy = rng.uniform(-GOAL_HALF_WIDTH, GOAL_HALF_WIDTH) - ball.y
         x_normalized, y_normalized = _normalize_vector(dx, dy)
         speed_power = _scale(winner.power, KICK_SPEED_RANGE)
         vx = x_normalized * speed_power
         vy = y_normalized * speed_power
+        vx, vy = _rotate(vx, vy, _shot_error(rng))
 
     elif isinstance(action, PassTo):
         teammate = next((p for p in state.players if p.id == action.target_id), None)
