@@ -1,0 +1,35 @@
+[tool.ruff]
+# Longitud de línea (PEP 8 clásico es 79, pero 88 es el estándar moderno adoptado por Black y Ruff)
+line-length = 88
+target-version = "py310" # Ajusta a la versión de Python de tu proyecto
+
+exclude = [
+    ".git",
+    ".venv",
+    "env",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+# E, W: pycodestyle (estilo PEP 8)
+# F: pyflakes (errores lógicos, variables no usadas)
+# I: isort (orden automático de imports)
+# B: flake8-bugbear (prevención de bugs y malas prácticas)
+select = ["E", "W", "F", "I", "B"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+omit = [
+    "app/models/*",
+    "app/db/migrations/*",
+    "*/__init__.py"
+]
