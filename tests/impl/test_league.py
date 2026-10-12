@@ -143,3 +143,24 @@ async def test_create_league_repo_integrity_error(api, mocks):
         await api.create_league(make_input(), CLUB)
 
     assert error.value.status_code == 400
+
+@pytest.mark.parametrize("max_clubs", [21, 30])
+async def test_create_league_max_clubs_over_limit(api, mocks, max_clubs):
+    data = make_input()
+    data.max_clubs = max_clubs  # Pydantic lo acepta (le=30), el límite real lo pone el impl
+
+    with pytest.raises(HTTPException) as error:
+        await api.create_league(data, CLUB)
+
+    assert error.value.status_code == 400
+    mocks.league_repo.create_with_enrollment.assert_not_awaited()
+
+
+async def test_create_league_max_clubs_at_limit(api, mocks):
+    data = make_input()
+    data.max_clubs = 20
+
+    result = await api.create_league(data, CLUB)
+
+    assert result.max_clubs == 5  # lo que devuelve el repo mockeado
+    mocks.league_repo.create_with_enrollment.assert_awaited_once()
