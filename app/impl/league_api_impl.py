@@ -9,6 +9,7 @@ from app.models.create_league_input import CreateLeagueInput
 from app.models.league_detail import LeagueDetail      
 from app.repositories.league_repository import LeagueRepository, SquadPlayerData
 from app.repositories.player_repository import PlayerRepository
+from app.db.behavior import BehaviorDB
 from app.security.passwords import hash_password
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +51,15 @@ class LeaguesApiImpl(BaseLeaguesApi):
         owned = await PlayerRepository(self._session).count_club_players(club_id.id, player_ids)
         if owned != SQUAD_SIZE:
             raise HTTPException(status_code=400, detail="Hay jugadores que no pertenecen a tu club")
+
+        for pl in create_league_input.players:
+            if pl.is_starter:
+                behavior = await self._session.get(BehaviorDB, pl.behavior_id)
+                if behavior is None or behavior.club_id != club_id.id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Hay comportamientos que no pertenecen a tu club",
+                )
         
         hashed = await hash_password(create_league_input.password) if create_league_input.password else None
         

@@ -18,7 +18,7 @@ class LeagueDB(Base):
     max_clubs: Mapped[int] = mapped_column(Integer, nullable=False)
     match_duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="no_started"
+        String(20), nullable=False, default="not_started"
     )
     creator_club_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("clubs.id"), nullable=False

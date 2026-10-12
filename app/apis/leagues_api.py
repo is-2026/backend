@@ -69,6 +69,7 @@ async def list_leagues(
 
 @router.post(
     "/leagues",
+    status_code=status.HTTP_201_CREATED,
     responses={
         201: {"model": LeagueDetail, "description": "Liga creada"},
         400: {"model": Error, "description": "max_clubs excede el límite del sistema o no se enviaron enviaron exactamente 3 titulares (con sus comportamientos) y 3 suplentes en players"},
@@ -86,7 +87,7 @@ async def create_league(
     """Notar que la cantidad de clubes tiene un mínimo duro de 3. Si se envía password, la liga se considera privada."""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0](session).create_league(create_league_input, club.id)
+    return await BaseLeaguesApi.subclasses[0](session).create_league(create_league_input, club)
 
 
 @router.get(
