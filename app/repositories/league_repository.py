@@ -3,7 +3,9 @@ from dataclasses import dataclass
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
+from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
 
 @dataclass
@@ -62,3 +64,19 @@ class LeagueRepository:
             raise
 
         return league
+    async def list_not_started(self) -> list[LeagueDB]:
+        result = await self.session.execute(
+            select(LeagueDB).where(LeagueDB.status == "not_started")
+        )
+        return list(result.scalars().all())
+
+    async def list_clubs_of_league(self, league_id: uuid.UUID) -> list[ClubDB]:
+        # primero las inscripciones de la liga, después busco el club de cada una
+        result = await self.session.execute(
+            select(LeagueEnrollmentDB).where(LeagueEnrollmentDB.league_id == league_id)
+        )
+        clubs = []
+        for enrollment in result.scalars().all():
+            club = await self.session.get(ClubDB, enrollment.club_id)
+            clubs.append(club)
+        return clubs
