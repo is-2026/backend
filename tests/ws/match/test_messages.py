@@ -1,7 +1,10 @@
+from datetime import datetime, timezone
+
 from app.engine.events import GoalEvent
 from app.ws.match.messages import (
     goal_message,
     match_finished_message,
+    match_started_message,
     match_state_message,
 )
 
@@ -100,3 +103,28 @@ def test_match_finished_se_serializa_como_el_asyncapi(match_state):
         "status",
     }
     assert payload["data"]["status"] == "finished"
+
+
+def test_match_started_serializes_to_json_as_intended(match_state, match_info):
+    match_state.tick = 7
+    match_state.home_score = 2
+    start = datetime(2026, 10, 4, 18, 30, 33, tzinfo=timezone.utc)
+
+    payload = match_started_message(MATCH_ID, match_info, start, match_state).model_dump(
+        mode="json", exclude_none=True
+    )
+
+    assert payload["type"] == "matchStarted"
+    assert set(payload["data"]) == {
+        "match_id", "home_club", "away_club", "home_lineup", "away_lineup",
+        "match_start", "tick", "total_ticks", "home_score", "away_score", "status",
+    }
+    data = payload["data"]
+    assert data["match_start"] == "2026-10-04T18:30:33Z"
+    assert (data["tick"], data["total_ticks"]) == (7, 3000)
+    assert (data["home_score"], data["away_score"], data["status"]) == (2, 0, "in_progress")
+    assert data["home_lineup"][0] == {
+        "player_id": "h1", "number": 1, "name": "Jugador h1", "is_starter": True,
+        "power": 60, "agility": 60, "control": 60, "speed": 60, "strength": 60,
+        "behavior_id": "b-h1", "behavior_name": "Atacante",
+    }

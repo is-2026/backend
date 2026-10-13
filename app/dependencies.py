@@ -10,6 +10,7 @@ from app.repositories.club_repository import ClubRepository
 from app.security_api import get_token_bearerAuth
 from app.ws.connection_manager import ConnectionManager
 from app.ws.lobby_friendly import lobby_connection
+from app.ws.match.starter import MatchStarter, match_starter
 
 async def get_current_club(
     token: TokenModel = Security(get_token_bearerAuth), #get_token_bearerAuth se ejecuta primero, si falla tira error y no llega a la funcion
@@ -23,3 +24,6 @@ async def get_current_club(
 
 def get_lobby_manager() -> ConnectionManager: #para poder mockear en los tests
     return lobby_connection
+
+def get_match_starter() -> MatchStarter:  # para poder mockear en los tests
+    return match_starter

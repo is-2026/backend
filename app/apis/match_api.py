@@ -24,6 +24,8 @@ from fastapi import (  # noqa: F401
 
 from typing import Any
 from uuid import UUID
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.session import get_session
 from app.models.change_live_behavior_request import ChangeLiveBehaviorRequest
 from app.models.error import Error
 from app.models.match import Match
@@ -56,11 +58,12 @@ async def get_match(
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
+    session: AsyncSession = Depends(get_session),
 ) -> Match:
     """Devuelve la información actualizada de un partido específico, incluyendo su estado y resultado actual."""
     if not BaseMatchApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseMatchApi.subclasses[0]().get_match(match_id)
+    return await BaseMatchApi.subclasses[0](session).get_match(match_id)
 
 
 @router.post(
