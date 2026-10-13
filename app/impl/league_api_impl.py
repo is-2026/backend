@@ -86,3 +86,26 @@ class LeaguesApiImpl(BaseLeaguesApi):
             status=league.status,
             registered_clubs=[{"club_id": club_id.id, "club_name": club_id.club_name}],
         )
+    async def list_leagues(self) -> list[LeagueDetail]:
+        repo = LeagueRepository(self._session)
+        leagues = await repo.list_not_started()
+
+        result = []
+        for league in leagues:
+            clubs = await repo.list_clubs_of_league(league.id)
+
+            registered = []
+            for club in clubs:
+                registered.append({"club_id": club.id, "club_name": club.club_name})
+
+            result.append(
+                LeagueDetail(
+                    id=league.id,
+                    name=league.name,
+                    is_private=league.hashed_password is not None,
+                    max_clubs=league.max_clubs,
+                    status=league.status,
+                    registered_clubs=registered,
+                )
+            )
+        return result
