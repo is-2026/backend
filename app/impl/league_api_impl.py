@@ -86,3 +86,51 @@ class LeaguesApiImpl(BaseLeaguesApi):
             status=league.status,
             registered_clubs=[{"club_id": club_id.id, "club_name": club_id.club_name}],
         )
+    async def list_leagues(self) -> list[LeagueDetail]:
+        repo = LeagueRepository(self._session)
+        leagues = await repo.list_not_started()
+
+        result = []
+        for league in leagues:
+            clubs = await repo.list_clubs_of_league(league.id)
+
+            registered = []
+            for club in clubs:
+                registered.append({"club_id": club.id, "club_name": club.club_name})
+
+            result.append(
+                LeagueDetail(
+                    id=league.id,
+                    name=league.name,
+                    is_private=league.hashed_password is not None,
+                    max_clubs=league.max_clubs,
+                    status=league.status,
+                    registered_clubs=registered,
+                )
+            )
+        return result
+
+    async def get_league(self, 
+                        league_id: uuid.UUID) -> LeagueDetail:
+        repoliga = LeagueRepository(self._session)
+
+        league = await repoliga.get(league_id) #Busco la liga por id
+        if league is None or league.status != "not_started":
+            raise HTTPException(status_code = 404, detail= "La liga no existe")
+
+        clubs = await repoliga.list_clubs_of_league(league.id)
+
+        registered = []
+        for club in clubs:
+            registered.append({"club_id": club.id, "club_name": club.club_name}) #el append es para agregar cosas a la lista
+
+        return LeagueDetail(
+            id = league.id,
+            name = league.name,
+            is_private = league.hashed_password is not None,
+            max_clubs= league.max_clubs,
+            status = league.status,
+            registered_clubs= registered
+        )
+    
+    
