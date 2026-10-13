@@ -30,6 +30,7 @@ class BaseLeaguesApi:
     async def create_league(
         self,
         create_league_input: CreateLeagueInput,
+        club_id : UUID
     ) -> LeagueDetail:
         """Notar que la cantidad de clubes tiene un mínimo duro de 3. Si se envía password, la liga se considera privada."""
         ...
