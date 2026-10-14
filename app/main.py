@@ -33,7 +33,6 @@ from app.db.session import check_connection, engine
 from app.errors import register_exception_handlers
 
 
-
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await check_connection()  # si MySQL no responde, la app no arranca

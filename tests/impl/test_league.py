@@ -31,10 +31,10 @@ def make_input(starters=3, password=None):
         for i in range(6)
     ]
     return CreateLeagueInput(
-        name="Liga", 
-        password=password, 
+        name="Liga",
+        password=password,
         max_clubs=5,
-        match_duration_minutes=10, 
+        match_duration_minutes=10,
         players=players,
     )
 
@@ -48,22 +48,28 @@ def mocks(monkeypatch):
     mock.player_repo.count_club_players.return_value = 6  # los 6 son del club
     mock.league_repo = AsyncMock()
     mock.league_repo.create_with_enrollment.return_value = SimpleNamespace(
-        id=uuid.uuid4(), 
-        name="LPF Chiqui Mafia", 
+        id=uuid.uuid4(),
+        name="LPF Chiqui Mafia",
         hashed_password=None,
-        max_clubs=5, 
+        max_clubs=5,
         status="not_started",
     )
     mock.hash_password = AsyncMock(return_value="hashed")
 
-    monkeypatch.setattr(league_api_impl, "PlayerRepository", MagicMock(return_value=mock.player_repo)) #Seteo lo que mockee
-    monkeypatch.setattr(league_api_impl, "LeagueRepository", MagicMock(return_value=mock.league_repo))
+    monkeypatch.setattr(
+        league_api_impl, "PlayerRepository", MagicMock(return_value=mock.player_repo)
+    )  # Seteo lo que mockee
+    monkeypatch.setattr(
+        league_api_impl, "LeagueRepository", MagicMock(return_value=mock.league_repo)
+    )
     monkeypatch.setattr(league_api_impl, "hash_password", mock.hash_password)
     return mock
 
 
 @pytest.fixture
-def api(mocks):  #Aca directamente mockeo toda la clase, porque la voy a necesitar para los tests.
+def api(
+    mocks,
+):  # Aca directamente mockeo toda la clase, porque la voy a necesitar para los tests.
     return LeaguesApiImpl(mocks.session)
 
 
@@ -76,7 +82,9 @@ async def test_create_league_public(api, mocks):
     # el creador queda inscripto
     assert result.registered_clubs[0].club_id == CLUB.id
     assert result.registered_clubs[0].club_name == "River Plate"
-    assert mocks.league_repo.create_with_enrollment.await_args.kwargs["club_id"] == CLUB.id
+    assert (
+        mocks.league_repo.create_with_enrollment.await_args.kwargs["club_id"] == CLUB.id
+    )
 
 
 async def test_create_league_private(api, mocks):
@@ -149,17 +157,22 @@ async def test_create_league_behavior_not_exist(api, mocks):
 
 
 async def test_create_league_repo_integrity_error(api, mocks):
-    mocks.league_repo.create_with_enrollment.side_effect = IntegrityError("INSERT", {}, Exception("fk"))
+    mocks.league_repo.create_with_enrollment.side_effect = IntegrityError(
+        "INSERT", {}, Exception("fk")
+    )
 
     with pytest.raises(HTTPException) as error:
         await api.create_league(make_input(), CLUB)
 
     assert error.value.status_code == 400
 
+
 @pytest.mark.parametrize("max_clubs", [21, 30])
 async def test_create_league_max_clubs_over_limit(api, mocks, max_clubs):
     data = make_input()
-    data.max_clubs = max_clubs  # Pydantic lo acepta (le=30), el límite real lo pone el impl
+    data.max_clubs = (
+        max_clubs  # Pydantic lo acepta (le=30), el límite real lo pone el impl
+    )
 
     with pytest.raises(HTTPException) as error:
         await api.create_league(data, CLUB)
@@ -177,16 +190,18 @@ async def test_create_league_max_clubs_at_limit(api, mocks):
     assert result.max_clubs == 5  # lo que devuelve el repo mockeado
     mocks.league_repo.create_with_enrollment.assert_awaited_once()
 
+
 async def test_get_league_public(api, mocks):
 
-    league = SimpleNamespace(id = uuid.uuid4(),
-                            name = "LPF chiqui Mafia",
-                            hashed_password= None,
-                            max_clubs= 5,
-                            status = "not_started")
+    league = SimpleNamespace(
+        id=uuid.uuid4(),
+        name="LPF chiqui Mafia",
+        hashed_password=None,
+        max_clubs=5,
+        status="not_started",
+    )
 
-    club = SimpleNamespace(id = uuid.uuid4(),
-                           club_name = "River Plate")
+    club = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
     mocks.league_repo.get.return_value = league
     mocks.league_repo.list_clubs_of_league.return_value = [club]
 
@@ -197,17 +212,19 @@ async def test_get_league_public(api, mocks):
     assert result.is_private is False
     assert result.status == "not_started"
     assert result.registered_clubs[0].club_name == "River Plate"
-    
-    mocks.league_repo.get.assert_awaited_once_with(league.id) #busco la liga 
 
-async def test_get_league_private(api,mocks):
-    league = SimpleNamespace(id = uuid.uuid4(),
-                                name = "LPF chiqui Mafia",
-                                hashed_password= "password",
-                                max_clubs= 5,
-                                status = "not_started")
-    club = SimpleNamespace(id = uuid.uuid4(),
-                               club_name = "River Plate")
+    mocks.league_repo.get.assert_awaited_once_with(league.id)  # busco la liga
+
+
+async def test_get_league_private(api, mocks):
+    league = SimpleNamespace(
+        id=uuid.uuid4(),
+        name="LPF chiqui Mafia",
+        hashed_password="password",
+        max_clubs=5,
+        status="not_started",
+    )
+    club = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
     mocks.league_repo.get.return_value = league
     mocks.league_repo.list_clubs_of_league.return_value = [club]
 
@@ -219,24 +236,36 @@ async def test_get_league_private(api,mocks):
     assert result.status == "not_started"
     assert result.registered_clubs[0].club_name == "River Plate"
 
-@pytest.mark.parametrize("status", ["started","finished"])
-async def test_get_league_not_available(api, mocks, status):
-    league = SimpleNamespace(id = uuid.uuid4(),
-                                    name = "LPF chiqui Mafia",
-                                    hashed_password= "password",
-                                    max_clubs= 5,
-                                    status = status)
-    
-    mocks.league_repo.get.return_value = league 
 
-    with pytest.raises(HTTPException) as error: #basicamente digo, lo que viene tiene que ser una excepcion, y lo guardo en error
+@pytest.mark.parametrize("status", ["started", "finished"])
+async def test_get_league_not_available(api, mocks, status):
+    league = SimpleNamespace(
+        id=uuid.uuid4(),
+        name="LPF chiqui Mafia",
+        hashed_password="password",
+        max_clubs=5,
+        status=status,
+    )
+
+    mocks.league_repo.get.return_value = league
+
+    with (
+        pytest.raises(HTTPException) as error
+    ):  # basicamente digo, lo que viene tiene que ser una excepcion, y lo guardo en error
         await api.get_league(league.id)
 
     assert error.value.status_code == 404
-#test listar ligas
+
+
+# test listar ligas
 async def test_list_leagues_public(api, mocks):
-    league = SimpleNamespace(id=uuid.uuid4(), name="Liga", hashed_password=None,
-                             max_clubs=5, status="not_started")
+    league = SimpleNamespace(
+        id=uuid.uuid4(),
+        name="Liga",
+        hashed_password=None,
+        max_clubs=5,
+        status="not_started",
+    )
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River")
     mocks.league_repo.list_not_started.return_value = [league]
     mocks.league_repo.list_clubs_of_league.return_value = [club]
@@ -253,8 +282,13 @@ async def test_list_leagues_public(api, mocks):
 
 
 async def test_list_leagues_private(api, mocks):
-    league = SimpleNamespace(id=uuid.uuid4(), name="Liga", hashed_password="hash",
-                             max_clubs=5, status="not_started")
+    league = SimpleNamespace(
+        id=uuid.uuid4(),
+        name="Liga",
+        hashed_password="hash",
+        max_clubs=5,
+        status="not_started",
+    )
     mocks.league_repo.list_not_started.return_value = [league]
     mocks.league_repo.list_clubs_of_league.return_value = []
 
@@ -272,7 +306,8 @@ async def test_list_leagues_empty(api, mocks):
     assert result == []
     mocks.league_repo.list_clubs_of_league.assert_not_awaited()
 
-#tests de endpoint
+
+# tests de endpoint
 
 URL = "/leagues"
 
@@ -310,8 +345,14 @@ async def make_body(session, club) -> dict:
     for i in range(6):
         players.append(
             PlayerDB(
-                id=uuid.uuid4(), name=f"Jugador {i}", number=i + 1,
-                power=100, agility=100, control=30, speed=30, strength=40,
+                id=uuid.uuid4(),
+                name=f"Jugador {i}",
+                number=i + 1,
+                power=100,
+                agility=100,
+                control=30,
+                speed=30,
+                strength=40,
                 club_id=club.id,
             )
         )
@@ -319,8 +360,10 @@ async def make_body(session, club) -> dict:
     for i in range(3):
         behaviors.append(
             BehaviorDB(
-                id=uuid.uuid4(), name=f"Comp {i}",
-                code="def decide_action(): pass", club_id=club.id,
+                id=uuid.uuid4(),
+                name=f"Comp {i}",
+                code="def decide_action(): pass",
+                club_id=club.id,
             )
         )
     session.add_all(players + behaviors)
@@ -330,8 +373,11 @@ async def make_body(session, club) -> dict:
     for i, player in enumerate(players):
         if i < 3:
             squad.append(
-                {"player_id": str(player.id), "is_starter": True,
-                 "behavior_id": str(behaviors[i].id)}
+                {
+                    "player_id": str(player.id),
+                    "is_starter": True,
+                    "behavior_id": str(behaviors[i].id),
+                }
             )
         else:
             squad.append(
@@ -349,12 +395,19 @@ async def add_league(session, club, name, status, password=None):
     league_id = uuid.uuid4()
     session.add(
         LeagueDB(
-            id=league_id, name=name, hashed_password=password, max_clubs=5,
-            match_duration_minutes=10, status=status, creator_club_id=club.id,
+            id=league_id,
+            name=name,
+            hashed_password=password,
+            max_clubs=5,
+            match_duration_minutes=10,
+            status=status,
+            creator_club_id=club.id,
         )
     )
     await session.commit()  # primero la liga, después la inscripción (clave foránea)
-    session.add(LeagueEnrollmentDB(id=uuid.uuid4(), league_id=league_id, club_id=club.id))
+    session.add(
+        LeagueEnrollmentDB(id=uuid.uuid4(), league_id=league_id, club_id=club.id)
+    )
     await session.commit()
 
 
@@ -373,8 +426,12 @@ async def test_endpoint_create_league_returns_201(client, session, club):
     assert data["max_clubs"] == 5
     assert data["registered_clubs"][0]["club_name"] == "Instituto"
     assert await count_leagues(session) == 1
-    inscripciones = await session.scalar(select(func.count()).select_from(LeagueEnrollmentDB))
-    jugadores = await session.scalar(select(func.count()).select_from(LeagueEnrollmentPlayerDB))
+    inscripciones = await session.scalar(
+        select(func.count()).select_from(LeagueEnrollmentDB)
+    )
+    jugadores = await session.scalar(
+        select(func.count()).select_from(LeagueEnrollmentPlayerDB)
+    )
     assert inscripciones == 1  # el creador queda inscripto
     assert jugadores == 6
 
@@ -467,16 +524,26 @@ async def test_endpoint_create_league_behavior_of_other_club(client, session, cl
     other_user_id = uuid.uuid4()
     other_club_id = uuid.uuid4()
     other_behavior_id = uuid.uuid4()
-    session.add(UserDB(id=other_user_id, email="otro@prueba.com", hashed_password="hash"))
+    session.add(
+        UserDB(id=other_user_id, email="otro@prueba.com", hashed_password="hash")
+    )
     await session.flush()
     session.add(
-        ClubDB(id=other_club_id, club_name="Otro club",
-               avatar_url="https://img.com/avatar.png", user_id=other_user_id)
+        ClubDB(
+            id=other_club_id,
+            club_name="Otro club",
+            avatar_url="https://img.com/avatar.png",
+            user_id=other_user_id,
+        )
     )
     await session.commit()
     session.add(
-        BehaviorDB(id=other_behavior_id, name="Ajeno",
-                   code="def decide_action(): pass", club_id=other_club_id)
+        BehaviorDB(
+            id=other_behavior_id,
+            name="Ajeno",
+            code="def decide_action(): pass",
+            club_id=other_club_id,
+        )
     )
     await session.commit()
 

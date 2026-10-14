@@ -50,16 +50,17 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
     "/leagues",
     responses={
         200: {"model": List[LeagueDetail], "description": "Ligas disponibles"},
-        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
     },
     tags=["Leagues"],
     summary="Listar ligas",
     response_model_by_alias=True,
 )
 async def list_leagues(
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
     session: AsyncSession = Depends(get_session),
 ) -> List[LeagueDetail]:
     """Devuelve tanto ligas públicas como privadas. Solo no iniciadas"""
@@ -73,8 +74,14 @@ async def list_leagues(
     status_code=status.HTTP_201_CREATED,
     responses={
         201: {"model": LeagueDetail, "description": "Liga creada"},
-        400: {"model": Error, "description": "max_clubs excede el límite del sistema o no se enviaron enviaron exactamente 3 titulares (con sus comportamientos) y 3 suplentes en players"},
-        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
+        400: {
+            "model": Error,
+            "description": "max_clubs excede el límite del sistema o no se enviaron enviaron exactamente 3 titulares (con sus comportamientos) y 3 suplentes en players",
+        },
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
     },
     tags=["Leagues"],
     summary="Crear liga",
@@ -88,23 +95,29 @@ async def create_league(
     """Notar que la cantidad de clubes tiene un mínimo duro de 3. Si se envía password, la liga se considera privada."""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0](session).create_league(create_league_input, club)
+    return await BaseLeaguesApi.subclasses[0](session).create_league(
+        create_league_input, club
+    )
 
 
 @router.get(
     "/club/leagues",
     responses={
-        200: {"model": List[LeagueSummary], "description": "Ligas en las que participa mi club"},
-        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
+        200: {
+            "model": List[LeagueSummary],
+            "description": "Ligas en las que participa mi club",
+        },
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
     },
     tags=["Leagues"],
     summary="Listar ligas de mi club",
     response_model_by_alias=True,
 )
 async def list_my_leagues(
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
 ) -> List[LeagueSummary]:
     """Identifica al club mediante el token de sesión. Devuelve las ligas en las que el club está inscripto."""
     if not BaseLeaguesApi.subclasses:
@@ -116,7 +129,10 @@ async def list_my_leagues(
     "/leagues/{league_id}",
     responses={
         200: {"model": LeagueDetail, "description": "Datos de la liga"},
-        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
         404: {"model": Error, "description": "Recurso no encontrado"},
     },
     tags=["Leagues"],
@@ -125,10 +141,8 @@ async def list_my_leagues(
 )
 async def get_league(
     league_id: UUID = Path(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
-    session : AsyncSession = Depends(get_session)
+    token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    session: AsyncSession = Depends(get_session),
 ) -> LeagueDetail:
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
@@ -139,8 +153,14 @@ async def get_league(
     "/leagues/{league_id}",
     responses={
         200: {"description": "Liga cancelada"},
-        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
-        403: {"model": Error, "description": "El usuario no tiene permisos para realizar esta operación"},
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
+        403: {
+            "model": Error,
+            "description": "El usuario no tiene permisos para realizar esta operación",
+        },
         404: {"model": Error, "description": "Recurso no encontrado"},
         409: {"model": Error, "description": "La liga ya se encuentra iniciada"},
     },
@@ -150,9 +170,7 @@ async def get_league(
 )
 async def cancel_league(
     league_id: UUID = Path(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
 ) -> None:
     """Solo el creador puede cancelarla, y solo si no está iniciada."""
     if not BaseLeaguesApi.subclasses:
@@ -164,8 +182,14 @@ async def cancel_league(
     "/leagues/{league_id}/join",
     responses={
         200: {"description": "Inscripción registrada"},
-        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
-        400: {"model": Error, "description": "La contraseña de la liga privada es incorrecta, no hay cupo, o no se enviaron exactamente 3 titulares y 3 suplentes."},
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
+        400: {
+            "model": Error,
+            "description": "La contraseña de la liga privada es incorrecta, no hay cupo, o no se enviaron exactamente 3 titulares y 3 suplentes.",
+        },
         404: {"model": Error, "description": "Recurso no encontrado"},
         409: {"model": Error, "description": "El club ya está inscripto en esta liga"},
     },
@@ -176,22 +200,28 @@ async def cancel_league(
 async def join_league(
     league_id: UUID = Path(..., description=""),
     join_league_input: JoinLeagueInput = Body(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
 ) -> None:
     """Reserva un cupo para la liga. Se definen 6 jugadores convocados para toda la liga (3 marcados como titulares por defecto, 3 como suplentes). Los titulares enviados se usan como fallback si el club no define la alineación antes de alguno de sus partidos."""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().join_league(league_id, join_league_input)
+    return await BaseLeaguesApi.subclasses[0]().join_league(
+        league_id, join_league_input
+    )
 
 
 @router.delete(
     "/leagues/{league_id}/join",
     responses={
         200: {"description": "Inscripción eliminada"},
-        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
-        404: {"model": Error, "description": "La liga indicada no existe, o el club no está inscripto en ella"},
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
+        404: {
+            "model": Error,
+            "description": "La liga indicada no existe, o el club no está inscripto en ella",
+        },
         409: {"model": Error, "description": "La liga ya se encuentra iniciada"},
     },
     tags=["Leagues"],
@@ -200,9 +230,7 @@ async def join_league(
 )
 async def leave_league(
     league_id: UUID = Path(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
 ) -> None:
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
@@ -213,9 +241,18 @@ async def leave_league(
     "/leagues/{league_id}/start",
     responses={
         200: {"model": LeagueDetail, "description": "Liga iniciada"},
-        400: {"model": Error, "description": "No hay suficientes clubes inscriptos para iniciar la liga"},
-        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
-        403: {"model": Error, "description": "El usuario no tiene permisos para realizar esta operación"},
+        400: {
+            "model": Error,
+            "description": "No hay suficientes clubes inscriptos para iniciar la liga",
+        },
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
+        403: {
+            "model": Error,
+            "description": "El usuario no tiene permisos para realizar esta operación",
+        },
         404: {"model": Error, "description": "Recurso no encontrado"},
         409: {"model": Error, "description": "La liga ya se encuentra iniciada"},
     },
@@ -225,9 +262,7 @@ async def leave_league(
 )
 async def start_league(
     league_id: UUID = Path(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
 ) -> LeagueDetail:
     """Solo el creador puede iniciarla. Cambia el estado a started y genera el fixture."""
     if not BaseLeaguesApi.subclasses:
@@ -239,7 +274,10 @@ async def start_league(
     "/leagues/{league_id}/matches",
     responses={
         200: {"model": List[Match], "description": "Partidos de la liga"},
-        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
         404: {"model": Error, "description": "Recurso no encontrado"},
         409: {"model": Error, "description": "La liga aún no fue iniciada"},
     },
@@ -250,9 +288,7 @@ async def start_league(
 async def list_league_matches(
     league_id: UUID = Path(..., description=""),
     status: Optional[str] = Query(None, description="", alias="status"),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
 ) -> List[Match]:
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
@@ -262,8 +298,14 @@ async def list_league_matches(
 @router.get(
     "/leagues/{league_id}/standings",
     responses={
-        200: {"model": List[StandingsItem], "description": "Tabla de posiciones de la liga"},
-        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
+        200: {
+            "model": List[StandingsItem],
+            "description": "Tabla de posiciones de la liga",
+        },
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
         404: {"model": Error, "description": "Recurso no encontrado"},
         409: {"model": Error, "description": "La liga aún no fue iniciada"},
     },
@@ -273,9 +315,7 @@ async def list_league_matches(
 )
 async def get_standings(
     league_id: UUID = Path(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
 ) -> List[StandingsItem]:
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
