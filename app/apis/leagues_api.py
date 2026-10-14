@@ -127,10 +127,11 @@ async def get_league(
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
+    session : AsyncSession = Depends(get_session)
 ) -> LeagueDetail:
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().get_league(league_id)
+    return await BaseLeaguesApi.subclasses[0](session).get_league(league_id)
 
 
 @router.delete(
