@@ -73,6 +73,8 @@ def mocks(monkeypatch):
     )
     mock.hash_password = AsyncMock(return_value="hashed")
     mock.verify_password = AsyncMock(return_value=True)
+    mock.lobby_connection = MagicMock()
+    mock.lobby_connection.broadcast = AsyncMock()
 
     monkeypatch.setattr(
         league_api_impl, "PlayerRepository", MagicMock(return_value=mock.player_repo)
@@ -82,6 +84,11 @@ def mocks(monkeypatch):
     )
     monkeypatch.setattr(league_api_impl, "hash_password", mock.hash_password)
     monkeypatch.setattr(league_api_impl, "verify_password", mock.verify_password)
+
+    monkeypatch.setattr(
+        league_api_impl, "league_lobby_connection", mock.lobby_connection
+    )  # mockeamos el lobby de ligas
+
     return mock
 
 
@@ -621,7 +628,7 @@ async def test_endpoint_list_leagues_without_token_returns_401(client, session):
     assert "message" in r.json()
 
 
-async def test_join_league_public(api, mocks):
+async def test_join_league_public_endpoint(api, mocks):
     # configuramos la liga que vamos a obtener
     league_id = uuid.uuid4()
     league = SimpleNamespace(
@@ -708,3 +715,39 @@ async def test_join_league_already_enrolled(api, mocks):
         await api.join_league(league_id, make_join_league_input(), CLUB)
 
     assert error.value.status_code == 409
+
+
+async def test_club_registered_event(api, mocks):
+    # configuramos la liga
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        name="LPF chiqui Mafia",
+        hashed_password=None,
+        max_clubs=5,
+        status="not_started",
+    )
+    mocks.league_repo.get.return_value = league
+    # simulamos que ya hay un club inscripto
+    mocks.league_repo.list_clubs_of_league.return_value = [MagicMock()]
+
+    # llamamos al endpoint
+    await api.join_league(league_id, make_join_league_input(), CLUB)
+
+    # verificamos que impacto en la db
+    mocks.league_repo.add_enrollment.assert_awaited_once()
+
+    # VERIFICAMOS EL EVENTO WEBSOCKET
+    # armamos el evento que esperamos recibir luego de una inscripcion exitosa
+    expected_event = {
+        "type": "ClubRegistered",
+        "payload": {
+            "league_id": str(league_id),
+            "club_id": str(CLUB.id),
+            "club_name": CLUB.club_name,
+            "registered_count": 2,
+        },
+    }
+
+    # le preguntamos al mock si el endpoint llamo a broadcast con esos datos
+    mocks.lobby_connection.broadcast.assert_awaited_once_with(league_id, expected_event)
