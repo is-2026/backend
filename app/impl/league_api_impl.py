@@ -17,6 +17,7 @@ from app.repositories.league_repository import (
 from app.repositories.player_repository import PlayerRepository
 from app.db.behavior import BehaviorDB
 from app.security.passwords import hash_password, verify_password
+from app.ws.lobby_league import league_lobby_connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -204,3 +205,18 @@ class LeaguesApiImpl(BaseLeaguesApi):
             raise HTTPException(
                 status_code=409, detail="El club ya está inscripto en esta liga"
             )
+
+        # tras la inscripcion del club, armo el evento ClubRegistered y lo transmito por el lobby de la liga
+        event_club_registered = {
+            "type": "ClubRegistered",
+            "payload": {
+                "league_id": str(league_id),
+                "club_id": str(club.id),
+                "club_name": club.club_name,
+                "registered_count": len(enrolled_clubs)
+                + 1,  # aumentamos en 1 la cantidad total de inscriptos
+            },
+        }
+
+        await league_lobby_connection.broadcast(league_id, event_club_registered)
+        return
