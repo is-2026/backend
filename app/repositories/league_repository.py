@@ -2,7 +2,7 @@ import uuid
 from dataclasses import dataclass
 
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import Async_Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.db.club import ClubDB
@@ -17,7 +17,7 @@ class SquadPlayerData:
 
 
 class LeagueRepository:
-    def __init__(self, session: Async_Session) -> None:
+    def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
     async def create_with_enrollment(
