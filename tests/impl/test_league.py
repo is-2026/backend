@@ -12,16 +12,18 @@ from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
 from app.db.player import PlayerDB
 from app.db.user import UserDB
+from app.repositories.league_repository import ClubAlreadyEnrolled
 from app.impl import league_api_impl
 from app.impl.league_api_impl import LeaguesApiImpl
 from app.models.create_league_input import CreateLeagueInput
+from app.models.join_league_input import JoinLeagueInput
 from app.models.squad_player_input import SquadPlayerInput
 from app.security.tokens import create_access_token
 
 CLUB = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
 
 
-def make_input(starters=3, password=None):
+def make_create_league_input(starters=3, password=None):
     players = [
         SquadPlayerInput(
             player_id=uuid.uuid4(),
@@ -35,6 +37,21 @@ def make_input(starters=3, password=None):
         password=password,
         max_clubs=5,
         match_duration_minutes=10,
+        players=players,
+    )
+
+
+def make_join_league_input(starters=3, password=None):
+    players = [
+        SquadPlayerInput(
+            player_id=uuid.uuid4(),
+            is_starter=i < starters,
+            behavior_id=uuid.uuid4() if i < starters else None,
+        )
+        for i in range(6)
+    ]
+    return JoinLeagueInput(
+        password=password,
         players=players,
     )
 
@@ -55,6 +72,7 @@ def mocks(monkeypatch):
         status="not_started",
     )
     mock.hash_password = AsyncMock(return_value="hashed")
+    mock.verify_password = AsyncMock(return_value=True)
 
     monkeypatch.setattr(
         league_api_impl, "PlayerRepository", MagicMock(return_value=mock.player_repo)
@@ -63,6 +81,7 @@ def mocks(monkeypatch):
         league_api_impl, "LeagueRepository", MagicMock(return_value=mock.league_repo)
     )
     monkeypatch.setattr(league_api_impl, "hash_password", mock.hash_password)
+    monkeypatch.setattr(league_api_impl, "verify_password", mock.verify_password)
     return mock
 
 
@@ -74,7 +93,7 @@ def api(
 
 
 async def test_create_league_public(api, mocks):
-    result = await api.create_league(make_input(), CLUB)
+    result = await api.create_league(make_create_league_input(), CLUB)
 
     mocks.hash_password.assert_not_awaited()  # sin password no se hashea
     assert result.is_private is False
@@ -90,7 +109,7 @@ async def test_create_league_public(api, mocks):
 async def test_create_league_private(api, mocks):
     mocks.league_repo.create_with_enrollment.return_value.hashed_password = "hashed"
 
-    result = await api.create_league(make_input(password="1234"), CLUB)
+    result = await api.create_league(make_create_league_input(password="1234"), CLUB)
 
     mocks.hash_password.assert_awaited_once_with("1234")
     assert result.is_private is True
@@ -99,14 +118,14 @@ async def test_create_league_private(api, mocks):
 @pytest.mark.parametrize("starters", [2, 4])
 async def test_create_league_wrong_number_of_starters(api, mocks, starters):
     with pytest.raises(HTTPException) as error:
-        await api.create_league(make_input(starters=starters), CLUB)
+        await api.create_league(make_create_league_input(starters=starters), CLUB)
 
     assert error.value.status_code == 400
     mocks.league_repo.create_with_enrollment.assert_not_awaited()
 
 
 async def test_create_league_starter_without_behavior(api, mocks):
-    data = make_input()
+    data = make_create_league_input()
     data.players[0].behavior_id = None
 
     with pytest.raises(HTTPException) as error:
@@ -117,7 +136,7 @@ async def test_create_league_starter_without_behavior(api, mocks):
 
 
 async def test_create_league_repeated_players(api, mocks):
-    data = make_input()
+    data = make_create_league_input()
     data.players[1].player_id = data.players[0].player_id
 
     with pytest.raises(HTTPException) as error:
@@ -131,7 +150,7 @@ async def test_create_league_players_other_club(api, mocks):
     mocks.player_repo.count_club_players.return_value = 5  # uno no es del club
 
     with pytest.raises(HTTPException) as error:
-        await api.create_league(make_input(), CLUB)
+        await api.create_league(make_create_league_input(), CLUB)
 
     assert error.value.status_code == 400
     mocks.league_repo.create_with_enrollment.assert_not_awaited()
@@ -141,7 +160,7 @@ async def test_create_league_behavior_other_club(api, mocks):
     mocks.session.get.return_value = SimpleNamespace(club_id=uuid.uuid4())  # club ajeno
 
     with pytest.raises(HTTPException) as error:
-        await api.create_league(make_input(), CLUB)
+        await api.create_league(make_create_league_input(), CLUB)
 
     assert error.value.status_code == 400
     mocks.league_repo.create_with_enrollment.assert_not_awaited()
@@ -151,7 +170,7 @@ async def test_create_league_behavior_not_exist(api, mocks):
     mocks.session.get.return_value = None
 
     with pytest.raises(HTTPException) as error:
-        await api.create_league(make_input(), CLUB)
+        await api.create_league(make_create_league_input(), CLUB)
 
     assert error.value.status_code == 400
 
@@ -162,14 +181,14 @@ async def test_create_league_repo_integrity_error(api, mocks):
     )
 
     with pytest.raises(HTTPException) as error:
-        await api.create_league(make_input(), CLUB)
+        await api.create_league(make_create_league_input(), CLUB)
 
     assert error.value.status_code == 400
 
 
 @pytest.mark.parametrize("max_clubs", [21, 30])
 async def test_create_league_max_clubs_over_limit(api, mocks, max_clubs):
-    data = make_input()
+    data = make_create_league_input()
     data.max_clubs = (
         max_clubs  # Pydantic lo acepta (le=30), el límite real lo pone el impl
     )
@@ -182,7 +201,7 @@ async def test_create_league_max_clubs_over_limit(api, mocks, max_clubs):
 
 
 async def test_create_league_max_clubs_at_limit(api, mocks):
-    data = make_input()
+    data = make_create_league_input()
     data.max_clubs = 20
 
     result = await api.create_league(data, CLUB)
@@ -600,3 +619,92 @@ async def test_endpoint_list_leagues_without_token_returns_401(client, session):
 
     assert r.status_code == 401
     assert "message" in r.json()
+
+
+async def test_join_league_public(api, mocks):
+    # configuramos la liga que vamos a obtener
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        name="LPF chiqui Mafia",
+        hashed_password=None,
+        max_clubs=5,
+        status="not_started",
+    )
+    mocks.league_repo.get.return_value = league
+    mocks.league_repo.list_clubs_of_league.return_value = []  # simulamos 0 clubes inscriptos
+
+    # llamada al endpoint
+    await api.join_league(league_id, make_join_league_input(), CLUB)
+
+    # verificamos que se haya intentado añadir la inscripcion
+    mocks.league_repo.add_enrollment.assert_awaited_once()
+
+
+async def test_join_league_private_wrong_password(api, mocks):
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        name="LPF chiqui Mafia",
+        hashed_password="hashed_pw",
+        max_clubs=5,
+        status="not_started",
+    )
+    mocks.league_repo.get.return_value = league
+    mocks.verify_password.return_value = False
+
+    with pytest.raises(HTTPException) as error:
+        await api.join_league(
+            league_id, make_join_league_input(password="wrong_pw"), CLUB
+        )
+
+    assert error.value.status_code == 400
+    assert error.value.detail == "Contraseña incorrecta"
+
+    mocks.verify_password.assert_awaited_once_with("wrong_pw", "hashed_pw")
+    mocks.league_repo.add_enrollment.assert_not_awaited()
+
+
+async def test_join_league_full_capacity(api, mocks):
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        name="Liga Llena",
+        hashed_password=None,
+        max_clubs=3,
+        status="not_started",
+    )
+    mocks.league_repo.get.return_value = league
+    # simulamos que esta llena
+    mocks.league_repo.list_clubs_of_league.return_value = [
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+    ]
+
+    with pytest.raises(HTTPException) as error:
+        await api.join_league(league_id, make_join_league_input(), CLUB)
+
+    assert error.value.status_code == 400
+    mocks.league_repo.add_enrollment.assert_not_awaited()
+
+
+async def test_join_league_already_enrolled(api, mocks):
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        name="Liga",
+        hashed_password=None,
+        max_clubs=5,
+        status="not_started",
+    )
+    mocks.league_repo.get.return_value = league
+    mocks.league_repo.list_clubs_of_league.return_value = []
+
+    # configuramos el mock para que tire la excepcion de ClubAlreadyEnrolled
+    mocks.league_repo.add_enrollment.side_effect = ClubAlreadyEnrolled(CLUB.id)
+
+    with pytest.raises(HTTPException) as error:
+        await api.join_league(league_id, make_join_league_input(), CLUB)
+
+    assert error.value.status_code == 409
