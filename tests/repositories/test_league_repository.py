@@ -57,6 +57,21 @@ async def make_squad(session, club_id) -> list[SquadPlayerData]:
         for i, p in enumerate(players)
     ]
 
+async def create_liga(session, club_id, status):
+    league_id = uuid.uuid4()
+    session.add(
+        LeagueDB(
+            id=league_id,
+            name="LPF Chiqui mafia",
+            hashed_password=None,
+            max_clubs=5,
+            match_duration_minutes=10,
+            status=status,
+            creator_club_id=club_id,
+        )
+    )
+    await session.commit()
+    return league_id
 
 async def create(session, club_id, squad, password=None):
     return await LeagueRepository(session).create_with_enrollment(
@@ -131,3 +146,18 @@ async def test_duplicate_player_raises_and_saves_nothing(session):
 
     assert await count(session, LeagueDB) == 0
     assert await count(session, LeagueEnrollmentDB) == 0
+
+async def test_get_league_ret_league(session):
+    club_id = await make_club(session)
+    league_id = await create_liga(session, club_id=club_id, status="not_started")
+
+    league = await LeagueRepository(session).get(league_id)
+
+    assert league is not None
+    assert league.id == league.id
+    assert league.name == "LPF Chiqui mafia"
+
+async def test_get_league_id_not_exist(session):
+    league = await LeagueRepository(session).get(uuid.uuid4())
+
+    assert league is None
