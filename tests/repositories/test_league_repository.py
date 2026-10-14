@@ -9,7 +9,11 @@ from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
 from app.db.player import PlayerDB
 from app.db.user import UserDB
-from app.repositories.league_repository import LeagueRepository, SquadPlayerData
+from app.repositories.league_repository import (
+    LeagueRepository,
+    SquadPlayerData,
+    ClubAlreadyEnrolled,
+)
 
 
 async def count(session, model) -> int:
@@ -239,3 +243,36 @@ async def test_list_clubs_of_league_without_enrollments(session):
     clubs = await LeagueRepository(session).list_clubs_of_league(league_id)
 
     assert clubs == []
+
+
+async def test_add_enrollment(session):
+    # creamos club, liga y equipo
+    club_id = await make_club(session)
+    league_id = await add_league(session, club_id, "liga", "not_started")
+    squad = await make_squad(session, club_id)
+
+    repo = LeagueRepository(session)
+
+    # inscribimos al club con el equipo generado
+    await repo.add_enrollment(league_id, club_id, squad)
+
+    # verificamos que efectivamente se inscribio
+    clubs = await repo.list_clubs_of_league(league_id)
+    assert len(clubs) == 1
+    assert clubs[0].id == club_id
+
+
+async def test_add_enrollment_already_enrolled(session):
+    # creamos club, liga y equipo
+    club_id = await make_club(session)
+    league_id = await add_league(session, club_id, "Liga 2", "not_started")
+    squad = await make_squad(session, club_id)
+
+    repo = LeagueRepository(session)
+
+    # inscribimos
+    await repo.add_enrollment(league_id, club_id, squad)
+
+    # volvemos a inscribir y verificamos la excepcion (el club ya esta inscripto en esta liga)
+    with pytest.raises(ClubAlreadyEnrolled):
+        await repo.add_enrollment(league_id, club_id, squad)
