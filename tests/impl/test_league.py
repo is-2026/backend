@@ -16,6 +16,7 @@ from app.impl import league_api_impl
 from app.impl.league_api_impl import LeaguesApiImpl
 from app.models.create_league_input import CreateLeagueInput
 from app.models.squad_player_input import SquadPlayerInput
+from app.security.tokens import create_access_token
 
 CLUB = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
 
