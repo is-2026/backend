@@ -60,11 +60,12 @@ async def list_leagues(
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
+    session: AsyncSession = Depends(get_session),
 ) -> List[LeagueDetail]:
     """Devuelve tanto ligas públicas como privadas. Solo no iniciadas"""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().list_leagues()
+    return await BaseLeaguesApi.subclasses[0](session).list_leagues()
 
 
 @router.post(

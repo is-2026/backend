@@ -161,3 +161,58 @@ async def test_get_league_id_not_exist(session):
     league = await LeagueRepository(session).get(uuid.uuid4())
 
     assert league is None
+async def add_league(session, club_id, name, status, password=None):
+    league_id = uuid.uuid4()
+    session.add(
+        LeagueDB(
+            id=league_id, name=name, hashed_password=password, max_clubs=5,
+            match_duration_minutes=10, status=status, creator_club_id=club_id,
+        )
+    )
+    await session.commit()
+    return league_id
+
+
+async def test_list_not_started_empty(session):
+    result = await LeagueRepository(session).list_not_started()
+
+    assert result == []
+
+
+async def test_list_not_started_only_returns_not_started(session):
+    club_id = await make_club(session)
+    await add_league(session, club_id, "publica", "not_started")
+    await add_league(session, club_id, "privada", "not_started", password="hash")
+    await add_league(session, club_id, "iniciada", "started")
+    await add_league(session, club_id, "terminada", "finished")
+
+    result = await LeagueRepository(session).list_not_started()
+
+    assert len(result) == 2
+    names = [league.name for league in result]
+    assert "publica" in names
+    assert "privada" in names
+    assert "iniciada" not in names
+    assert "terminada" not in names
+
+
+async def test_list_clubs_of_league(session):
+    club_id = await make_club(session)
+    league_id = await add_league(session, club_id, "liga", "not_started")
+    session.add(LeagueEnrollmentDB(id=uuid.uuid4(), league_id=league_id, club_id=club_id))
+    await session.commit()
+
+    clubs = await LeagueRepository(session).list_clubs_of_league(league_id)
+
+    assert len(clubs) == 1
+    assert clubs[0].id == club_id
+    assert clubs[0].club_name == "Club Liga"
+
+
+async def test_list_clubs_of_league_without_enrollments(session):
+    club_id = await make_club(session)
+    league_id = await add_league(session, club_id, "liga", "not_started")
+
+    clubs = await LeagueRepository(session).list_clubs_of_league(league_id)
+
+    assert clubs == []
