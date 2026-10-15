@@ -12,7 +12,7 @@ from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
 from app.db.player import PlayerDB
 from app.db.user import UserDB
-from app.repositories.league_repository import ClubAlreadyEnrolled
+from app.repositories.league_repository import ClubAlreadyEnrolled, ClubNotEnrolled
 from app.impl import league_api_impl
 from app.impl.league_api_impl import LeaguesApiImpl
 from app.models.create_league_input import CreateLeagueInput
@@ -751,3 +751,101 @@ async def test_club_registered_event(api, mocks):
 
     # le preguntamos al mock si el endpoint llamo a broadcast con esos datos
     mocks.lobby_connection.broadcast.assert_awaited_once_with(league_id, expected_event)
+
+
+async def test_leave_league_success(api, mocks):
+    # configuramos la liga
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        name="LPF chiqui Mafia",
+        hashed_password=None,
+        max_clubs=5,
+        status="not_started",
+    )
+    mocks.league_repo.get.return_value = league
+
+    # simulamos que después de borrar quedan 0 clubes
+    mocks.league_repo.list_clubs_of_league.return_value = []
+
+    # simulamos que remove_enrollment no arroja error (exito)
+    mocks.league_repo.remove_enrollment = AsyncMock()
+
+    # llamamos al endpoint
+    await api.leave_league(league_id, CLUB)
+
+    # verificamos que se haya intentado eliminar de la db
+    mocks.league_repo.remove_enrollment.assert_awaited_once_with(league_id, CLUB.id)
+
+    # VERIFICAMOS EL EVENTO WEBSOCKET
+    # armamos el evento que esperamos recibir luego de que alguien se de de baja a la liga
+    expected_event = {
+        "type": "ClubLeft",
+        "payload": {
+            "league_id": str(league_id),
+            "club_id": str(CLUB.id),
+            "registered_count": 0,
+        },
+    }
+    mocks.lobby_connection.broadcast.assert_awaited_once_with(league_id, expected_event)
+
+
+async def test_leave_league_not_found(api, mocks):
+    league_id = uuid.uuid4()
+    # simulamos que el repo no encontro la liga (o sea, retorna None)
+    mocks.league_repo.get.return_value = None
+
+    with pytest.raises(HTTPException) as error:
+        await api.leave_league(league_id, CLUB)
+
+    assert error.value.status_code == 404
+    assert error.value.detail == "La liga indicada no existe"
+
+    # verificamos que nunca intento borrar nada ni enviar el evento
+    mocks.league_repo.remove_enrollment.assert_not_awaited()
+    mocks.lobby_connection.broadcast.assert_not_awaited()
+
+
+async def test_leave_league_already_started(api, mocks):
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        name="Liga Iniciada",
+        hashed_password=None,
+        max_clubs=5,
+        status="started",  # no se puede abandora una liga iniciada
+    )
+    mocks.league_repo.get.return_value = league
+
+    with pytest.raises(HTTPException) as error:
+        await api.leave_league(league_id, CLUB)
+
+    # comprobamos las respuestas de error esperadas
+    assert error.value.status_code == 409
+    assert error.value.detail == "La liga ya se encuentra iniciada"
+    # verificamos que no se ejecuto el metodo del repo
+    mocks.league_repo.remove_enrollment.assert_not_awaited()
+
+
+async def test_leave_league_not_enrolled(api, mocks):
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        name="Liga",
+        hashed_password=None,
+        max_clubs=5,
+        status="not_started",
+    )
+    mocks.league_repo.get.return_value = league
+
+    # forzamos que el metodo de borrar falle porque el club no estaba inscripto 
+    mocks.league_repo.remove_enrollment = AsyncMock(side_effect=ClubNotEnrolled())
+
+    with pytest.raises(HTTPException) as error:
+        await api.leave_league(league_id, CLUB)
+
+    # comprobamos las respuestas de error esperadas
+    assert error.value.status_code == 404
+    assert error.value.detail == "El club no está inscripto en esta liga"
+    # verificamos que no se emitio ningun evento
+    mocks.lobby_connection.broadcast.assert_not_awaited()
