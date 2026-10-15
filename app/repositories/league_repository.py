@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
@@ -12,6 +12,8 @@ from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
 class ClubAlreadyEnrolled(Exception):
     """El club ya está inscripto en esta liga"""
 
+class ClubNotEnrolled(Exception):
+    """El club no está inscripto en esta liga"""
 
 @dataclass
 class SquadPlayerData:
@@ -126,3 +128,29 @@ class LeagueRepository:
         return await self._session.get(
             LeagueDB, league_id
         )  # busco una fila por el id de la liga usando _session.get
+
+    async def remove_enrollment(self, league_id: uuid.UUID, club_id: uuid.UUID) -> None:
+        # buscamos la inscripcion
+        result = await self._session.execute(
+            select(LeagueEnrollmentDB)
+            .where(
+                LeagueEnrollmentDB.league_id == league_id,
+                LeagueEnrollmentDB.club_id == club_id
+            )
+        )
+        enrollment = result.scalars().first()
+
+        # si no existe lanzamos la excepcion
+        if not enrollment:
+            raise ClubNotEnrolled()
+
+        # borramos primero los jugadores asociados a esta inscripcion (por la FK)
+        await self._session.execute(
+            delete(LeagueEnrollmentPlayerDB)
+            .where(
+                LeagueEnrollmentPlayerDB.enrollment_id == enrollment.id
+            )
+        )
+        # borramos la inscripcion y confirmamos
+        await self._session.delete(enrollment)
+        await self._session.commit()
