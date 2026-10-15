@@ -13,6 +13,7 @@ from app.repositories.league_repository import (
     LeagueRepository,
     SquadPlayerData,
     ClubAlreadyEnrolled,
+    ClubNotEnrolled,
 )
 
 
@@ -276,3 +277,44 @@ async def test_add_enrollment_already_enrolled(session):
     # volvemos a inscribir y verificamos la excepcion (el club ya esta inscripto en esta liga)
     with pytest.raises(ClubAlreadyEnrolled):
         await repo.add_enrollment(league_id, club_id, squad)
+
+
+async def test_remove_enrollment_success(session):
+    # creamos la liga, el club y el equipo
+    club_id = await make_club(session)
+    league_id = await add_league(session, club_id, "Liga para borrar", "not_started")
+    squad = await make_squad(session, club_id)
+
+    repo = LeagueRepository(session)
+
+    # lo inscribimos
+    await repo.add_enrollment(league_id, club_id, squad)
+
+    # verificamos que se inscribio
+    clubs_antes = await repo.list_clubs_of_league(league_id)
+    assert len(clubs_antes) == 1
+
+    # ejecutamos el metodo (borrar inscripcion)
+    await repo.remove_enrollment(league_id, club_id)
+
+    # comprobamos que ya no este inscripto
+    clubs_despues = await repo.list_clubs_of_league(league_id)
+    assert len(clubs_despues) == 0
+
+    # tambien verificamos que los jugadores se hayan borrado (esto es la cascada manual que implementamos en el metodo)
+    jugadores_restantes = (
+        await session.scalars(select(LeagueEnrollmentPlayerDB))
+    ).all()
+    assert len(jugadores_restantes) == 0
+
+
+async def test_remove_enrollment_not_enrolled(session):
+    # creamos la liga y el club, pero no lo inscribimos
+    club_id = await make_club(session)
+    league_id = await add_league(session, club_id, "Liga", "not_started")
+
+    repo = LeagueRepository(session)
+
+    # ejecutamos el metodo (borrar inscripcion) y esperamos la excepcion ClubNotEnrolled
+    with pytest.raises(ClubNotEnrolled):
+        await repo.remove_enrollment(league_id, club_id)

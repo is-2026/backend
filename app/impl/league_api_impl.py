@@ -13,6 +13,7 @@ from app.repositories.league_repository import (
     LeagueRepository,
     SquadPlayerData,
     ClubAlreadyEnrolled,
+    ClubNotEnrolled,
 )
 from app.repositories.player_repository import PlayerRepository
 from app.db.behavior import BehaviorDB
@@ -219,4 +220,46 @@ class LeaguesApiImpl(BaseLeaguesApi):
         }
 
         await league_lobby_connection.broadcast(league_id, event_club_registered)
+        return
+
+    async def leave_league(
+        self,
+        league_id: uuid.UUID,
+        club: ClubDB,  # Recibimos ClubDB igual que en join_league y create_league
+    ) -> None:
+        repo = LeagueRepository(self._session)
+
+        # verificamos que la liga exista (404)
+        league = await repo.get(league_id)
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga indicada no existe")
+
+        # verificamos que no este iniciada (409)
+        if league.status != "not_started":
+            raise HTTPException(
+                status_code=409, detail="La liga ya se encuentra iniciada"
+            )
+
+        # eliminamos la inscripcion (404 si no estaba inscripto)
+        try:
+            await repo.remove_enrollment(league_id, club.id)
+        except ClubNotEnrolled:
+            raise HTTPException(
+                status_code=404, detail="El club no está inscripto en esta liga"
+            )
+
+        # obtenemos la nueva cantidad de inscriptos (necesaria para enviar en el evento)
+        enrolled_clubs = await repo.list_clubs_of_league(league_id)
+
+        # tras el abandono de liga, armamos y emitimos el evento ClubLeft
+        event_club_left = {
+            "type": "ClubLeft",
+            "payload": {
+                "league_id": str(league_id),
+                "club_id": str(club.id),
+                "registered_count": len(enrolled_clubs),
+            },
+        }
+
+        await league_lobby_connection.broadcast(league_id, event_club_left)
         return
