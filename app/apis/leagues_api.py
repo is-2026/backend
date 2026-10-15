@@ -201,12 +201,14 @@ async def join_league(
     league_id: UUID = Path(..., description=""),
     join_league_input: JoinLeagueInput = Body(..., description=""),
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
 ) -> None:
     """Reserva un cupo para la liga. Se definen 6 jugadores convocados para toda la liga (3 marcados como titulares por defecto, 3 como suplentes). Los titulares enviados se usan como fallback si el club no define la alineación antes de alguno de sus partidos."""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().join_league(
-        league_id, join_league_input
+    return await BaseLeaguesApi.subclasses[0](session).join_league(
+        league_id, join_league_input, club
     )
 
 

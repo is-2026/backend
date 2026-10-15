@@ -9,6 +9,10 @@ from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
 
 
+class ClubAlreadyEnrolled(Exception):
+    """El club ya está inscripto en esta liga"""
+
+
 @dataclass
 class SquadPlayerData:
     player_id: uuid.UUID
@@ -20,6 +24,7 @@ class LeagueRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    # crea la liga junto con su dueño
     async def create_with_enrollment(
         self,
         name: str,
@@ -64,6 +69,39 @@ class LeagueRepository:
             raise
 
         return league
+
+    # inscripcion a una liga
+    async def add_enrollment(
+        self,
+        league_id: uuid.UUID,
+        club_id: uuid.UUID,
+        squadPlayer: list[SquadPlayerData],
+    ) -> None:
+        # creo la tabla de inscripcion
+        enrollment = LeagueEnrollmentDB(
+            id=uuid.uuid4(), league_id=league_id, club_id=club_id
+        )
+        # mapeo cada squadPlayer a LeagueEnrollmentPlayerDB con el enrollment que creamos antes
+        enrolled_players = [
+            LeagueEnrollmentPlayerDB(
+                id=uuid.uuid4(),
+                enrollment_id=enrollment.id,
+                player_id=sp.player_id,
+                is_starter=sp.is_starter,
+                behavior_id=sp.behavior_id
+                if sp.is_starter
+                else None,  # si no es titular-> behavior=None
+            )
+            for sp in squadPlayer
+        ]
+        try:
+            self._session.add(enrollment)
+            await self._session.flush()
+            self._session.add_all(enrolled_players)
+            await self._session.commit()
+        except IntegrityError as e:
+            await self._session.rollback()
+            raise ClubAlreadyEnrolled(club_id) from e
 
     async def list_not_started(self) -> list[LeagueDB]:
         result = await self._session.execute(

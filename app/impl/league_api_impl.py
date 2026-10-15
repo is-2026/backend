@@ -3,14 +3,21 @@ import uuid
 from fastapi import HTTPException, status
 
 from app.apis.leagues_api_base import BaseLeaguesApi
+from app.impl.friendlies_api_impl import _validate_squad
 from app.db.club import ClubDB
 from app.db.session import SessionLocal
+from app.models.join_league_input import JoinLeagueInput
 from app.models.create_league_input import CreateLeagueInput
 from app.models.league_detail import LeagueDetail
-from app.repositories.league_repository import LeagueRepository, SquadPlayerData
+from app.repositories.league_repository import (
+    LeagueRepository,
+    SquadPlayerData,
+    ClubAlreadyEnrolled,
+)
 from app.repositories.player_repository import PlayerRepository
 from app.db.behavior import BehaviorDB
-from app.security.passwords import hash_password
+from app.security.passwords import hash_password, verify_password
+from app.ws.lobby_league import league_lobby_connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -146,3 +153,70 @@ class LeaguesApiImpl(BaseLeaguesApi):
             status=league.status,
             registered_clubs=registered,
         )
+
+    async def join_league(
+        self,
+        league_id: uuid.UUID,
+        join_league_input: JoinLeagueInput,
+        club: ClubDB,
+    ) -> None:
+        repo = LeagueRepository(self._session)
+
+        # valido el equipo (error 400)
+        _validate_squad(join_league_input.players)
+
+        league = await repo.get(league_id)  # obtengo la liga
+
+        # valido la existencia de la liga (error 404)
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga no existe")
+
+        # verifico si la liga es privada y valido (error 400)
+        if league.hashed_password:
+            if not join_league_input.password or not await verify_password(
+                join_league_input.password, league.hashed_password
+            ):
+                raise HTTPException(status_code=400, detail="Contraseña incorrecta")
+
+        # verifico si hay cupo (error 400)
+        enrolled_clubs = await repo.list_clubs_of_league(league_id)
+        if len(enrolled_clubs) >= league.max_clubs:
+            raise HTTPException(
+                status_code=400, detail="No hay cupo disponible para la liga"
+            )
+
+        # mapeo los jugadores de SquadPlayerInput a SquadPlayerData
+        data_players = [
+            SquadPlayerData(
+                player_id=pl.player_id,
+                is_starter=pl.is_starter,
+                behavior_id=pl.behavior_id,
+            )
+            for pl in join_league_input.players
+        ]
+
+        # inscribo al club
+        try:
+            await repo.add_enrollment(
+                league_id=league_id, club_id=club.id, squadPlayer=data_players
+            )
+        except ClubAlreadyEnrolled:
+            # club ya inscripto (error 409)
+            raise HTTPException(
+                status_code=409, detail="El club ya está inscripto en esta liga"
+            )
+
+        # tras la inscripcion del club, armo el evento ClubRegistered y lo transmito por el lobby de la liga
+        event_club_registered = {
+            "type": "ClubRegistered",
+            "payload": {
+                "league_id": str(league_id),
+                "club_id": str(club.id),
+                "club_name": club.club_name,
+                "registered_count": len(enrolled_clubs)
+                + 1,  # aumentamos en 1 la cantidad total de inscriptos
+            },
+        }
+
+        await league_lobby_connection.broadcast(league_id, event_club_registered)
+        return
