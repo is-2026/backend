@@ -71,6 +71,7 @@ class BaseLeaguesApi:
     async def leave_league(
         self,
         league_id: UUID,
+        club_id: UUID,
     ) -> None:
         ...
 
