@@ -69,7 +69,8 @@ async def test_get_behavior_return_behavior(
         id=behavior_id, 
         name="Correr", 
         code="def run(): pass", 
-        club_id=club_id
+        club_id=club_id,
+        kind = "player"
     )
 
     mocked_repo = MagicMock()
@@ -82,6 +83,7 @@ async def test_get_behavior_return_behavior(
     assert result.id == behavior_id
     assert result.name == "Correr"
     assert result.code == "def run(): pass"
+    assert result.kind == "player"
     # la búsqueda tiene que filtrar por el club del usuario, si no, se filtra código ajeno
     mocked_repo.get_id_and_club.assert_awaited_once_with(
         behavior_id=behavior_id, club_id=club_id
