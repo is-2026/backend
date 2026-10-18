@@ -58,19 +58,26 @@ El servidor de FastAPI se recarga solo cuando editás archivos dentro de `app/`.
 
 ### Tests
 
-| Con los contenedores levantados:
-`docker compose exec backend pytest`|
-|Los tests usan una base de datos propia, `futbot_test`|
-|Esa base se **borra y se vuelve a crear al inicio de cada corrida**, así que:
+Con los contenedores levantados:
+`docker compose exec backend pytest`
+
+Los tests usan una base de datos propia, `futbot_test`
+Esa base se **borra y se vuelve a crear al inicio de cada corrida**, así que:
+ 
  Si cambia el esquema (una columna o tabla nueva), no hace falta ningún paso manual.
  Los datos de `futbot_test` son descartables: no guardes nada ahí a mano.
- La base de desarrollo no se modifica.
-|
+ 
+La base de desarrollo no se modifica.
+
 
 ### Migraciones (Alembic)
 
-|Cada cambio en los modelos de `app/db/` necesita una migración.|
-| Ver en qué migración está la base | `docker compose exec backend alembic current` |
-| Ver la última migración del código | `docker compose exec backend alembic heads` |
-| Generar una migración | `docker compose exec backend alembic revision --autogenerate -m "mensaje"` |
-| Aplicar las pendientes | `docker compose exec backend alembic upgrade head` |
+Cada cambio en los modelos de `app/db/` necesita una migración.
+
+Ver en qué migración está la base: `docker compose exec backend alembic current` 
+
+Ver la última migración del código: `docker compose exec backend alembic heads` 
+
+Generar una migración: `docker compose exec backend alembic revision --autogenerate -m "mensaje"` 
+ 
+Aplicar las pendientes: `docker compose exec backend alembic upgrade head` 
