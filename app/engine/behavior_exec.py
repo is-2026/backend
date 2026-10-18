@@ -1,14 +1,47 @@
+import builtins
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from math import hypot, isfinite
-from types import CodeType
+from types import CodeType, SimpleNamespace
 
 from app.engine.actions import Action, Move, PassTo, Shoot, ShootAtGoal
 from app.engine.engine import control_radius
 from app.engine.state import MatchState, PlayerState, Side
+from app.engine.validation import InvalidBehaviorCode
 
 logger = logging.getLogger(__name__)
+
+
+# Lo único de python que puede usar un comportamiento (además de import math)
+# Lo que no está acá (open, eval, ...) no existe al ejecutar
+SAFE_BUILTINS = (
+    "abs",
+    "min",
+    "max",
+    "round",
+    "sum",
+    "len",
+    "range",
+    "enumerate",
+    "zip",
+    "sorted",
+    "reversed",
+    "map",
+    "filter",
+    "any",
+    "all",
+    "isinstance",
+    "list",
+    "dict",
+    "tuple",
+    "set",
+    "float",
+    "int",
+    "bool",
+    "str",
+)
 
 
 @dataclass(frozen=True)
@@ -33,10 +66,6 @@ class Snapshot:
     rival_score: int
     tick: int
     total_ticks: int
-
-
-class InvalidBehaviorCode(Exception):
-    """Comportamiento con sintaxis inválida"""
 
 
 def _to_view(x: float, y: float, side: Side) -> tuple[float, float]:
@@ -85,6 +114,21 @@ def take_snapshot(state: MatchState, side: Side) -> Snapshot:
     )
 
 
+def _safe_builtins() -> dict[str, object]:
+    """Builtins de un brain. Cada brain recibe un dict y un math propios:
+    si un comportamiento hace math.pi = 3 o pisa abs, no le cambia nada a otro"""
+    public = {name: getattr(math, name) for name in dir(math) if name[0] != "_"}
+    own_math = SimpleNamespace(**public)
+
+    def import_only_math(name, globals=None, locals=None, fromlist=(), level=0):
+        # Python lo llama en cada import
+        return own_math
+
+    safe = {name: getattr(builtins, name) for name in SAFE_BUILTINS}
+    safe["__import__"] = import_only_math
+    return safe
+
+
 def compile_behavior(code: str, name: str) -> CodeType:
     # el filename es lo que aparece en el traceback por ej: File "<behavior h1>", line x
     # la sintaxis se valida al guardar el comportamiento, acá es solo defensa
@@ -106,6 +150,7 @@ class PlayerBrain:
         self._snapshot: Snapshot | None = None
 
         namespace = {
+            "__builtins__": _safe_builtins(),
             "my_pos": self.my_pos,
             "ball_pos": self.ball_pos,
             "has_ball": self.has_ball,
