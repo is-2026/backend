@@ -7,6 +7,7 @@ from types import CodeType
 from app.engine.actions import Action, Move, PassTo, Shoot, ShootAtGoal
 from app.engine.engine import control_radius
 from app.engine.state import MatchState, PlayerState, Side
+from app.engine.validation import InvalidBehaviorCode
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,6 @@ class Snapshot:
     rival_score: int
     tick: int
     total_ticks: int
-
-
-class InvalidBehaviorCode(Exception):
-    """Comportamiento con sintaxis inválida"""
 
 
 def _to_view(x: float, y: float, side: Side) -> tuple[float, float]:
