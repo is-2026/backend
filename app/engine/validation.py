@@ -1,6 +1,7 @@
 import ast
 
 MAX_CODE_LENGTH = 10000
+ALLOWED_IMPORT = "math"
 
 
 class InvalidBehaviorCode(Exception):
@@ -31,12 +32,18 @@ PROHIBITED_NAMES = [
 
 class BehaviorValidator(ast.NodeVisitor):
     def visit_Import(self, node):
-        raise InvalidBehaviorCode(f"Línea {node.lineno}: está prohibido importar")
+        for alias in node.names:
+            if alias.name != ALLOWED_IMPORT:
+                raise InvalidBehaviorCode(
+                    f"Línea {node.lineno}: solo se puede importar {ALLOWED_IMPORT}"
+                )
 
     def visit_ImportFrom(self, node):
-        raise InvalidBehaviorCode(
-            f"Línea {node.lineno}: está prohibido importar desde {node.module}"
-        )
+        # level > 0 es un import relativo (from . import x)
+        if node.module != ALLOWED_IMPORT or node.level != 0:
+            raise InvalidBehaviorCode(
+                f"Línea {node.lineno}: solo se puede importar {ALLOWED_IMPORT}"
+            )
 
     def visit_Name(self, node):
         if node.id in PROHIBITED_NAMES or node.id.startswith("__"):
