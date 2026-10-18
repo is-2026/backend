@@ -6,7 +6,9 @@ from fastapi import HTTPException
 
 from app.db.behavior import BehaviorDB
 from app.impl.behavior_api_impl import BehaviorApiImpl
-
+from app.models.create_behavior_input import CreateBehaviorInput
+from app.engine.behavior_exec import InvalidBehaviorCode
+from app.repositories.behavior_repository import DuplicateNameBehavior 
 
 @patch("app.impl.behavior_api_impl.BehaviorRepository")
 async def test_list_behaviors_return_list(
@@ -70,6 +72,7 @@ async def test_get_behavior_return_behavior(
         name="Correr", 
         code="def run(): pass", 
         club_id=club_id,
+        kind = "player"
     )
 
     mocked_repo = MagicMock()
@@ -82,6 +85,7 @@ async def test_get_behavior_return_behavior(
     assert result.id == behavior_id
     assert result.name == "Correr"
     assert result.code == "def run(): pass"
+    assert result.kind == "player"
     # la búsqueda tiene que filtrar por el club del usuario, si no, se filtra código ajeno
     mocked_repo.get_id_and_club.assert_awaited_once_with(
         behavior_id=behavior_id, club_id=club_id
@@ -102,3 +106,56 @@ async def test_get_behavior_return_404(
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "El comportamiento no existe"
+
+
+@patch("app.impl.behavior_api_impl.validate_behavior_code")
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
+async def test_create_behavior_succes(
+    mocked_repo_class, mocked_validate
+):
+    club_id = uuid.uuid4()
+    behavior_id = uuid.uuid4()
+    behavior_db = BehaviorDB(
+        id=behavior_id, 
+        name="CorrerCorrerCorrerCorrerCorrer", 
+        code="def run(): pass", 
+        club_id=club_id,
+        kind = "player"
+    )
+    mocked_repo = MagicMock()
+    mocked_repo.create= AsyncMock(return_value = behavior_db)
+    mocked_repo_class.return_value = mocked_repo
+
+    data = CreateBehaviorInput(name = "CorrerCorrerCorrerCorrerCorrer", code= "def run(): pass", kind = "player" )
+    result = await BehaviorApiImpl(MagicMock()).create_behavior(data, club_id)
+    
+    assert result.id == behavior_id
+    assert result.name == "CorrerCorrerCorrerCorrerCorrer"
+    assert result.code == "def run(): pass"
+    assert result.kind == "player"
+
+    mocked_validate.assert_called_once_with("def run(): pass", "player") #verifico que valido con el codigo y con el kind correctos
+    mocked_repo.create.assert_awaited_once_with(
+        club_id, "CorrerCorrerCorrerCorrerCorrer", "def run(): pass", "player"
+    )
+
+
+
+@pytest.mark.parametrize("name" , ["", "   ", "\n"])
+@patch("app.impl.behavior_api_impl.validate_behavior_code")
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
+async def test_create_behavior_name_empty(
+    mocked_repo_class, mocked_validate, name
+):
+    club_id = uuid.uuid4()
+    mocked_repo = MagicMock()
+    mocked_repo.create= AsyncMock()
+    mocked_repo_class.return_value = mocked_repo
+
+    data = CreateBehaviorInput(name = name, code= "def run(): pass", kind = "player" )
+    with pytest.raises(HTTPException) as exc_info:  
+        await BehaviorApiImpl(MagicMock()).create_behavior(data, club_id)
+
+    assert exc_info.value.status_code == 400
+    mocked_validate.assert_not_called()
+    mocked_repo.create.assert_not_called()
