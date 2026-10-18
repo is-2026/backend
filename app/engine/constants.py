@@ -34,3 +34,6 @@ TRIANGLE_HOME = ((-4.0, 0.0), (-12.0, -5.0), (-12.0, 5.0))
 
 # Cada remate se desvía al azar hasta este ángulo para cada lado
 SHOT_SPREAD_DEG = 25.0
+
+# Distancia de separación mínima entre jugadores (no es colisión, es más un forcefield)
+SOCIAL_DISTANCING = 1.0
