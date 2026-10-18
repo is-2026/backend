@@ -103,3 +103,13 @@ def _check_contract_function(parsed: ast.Module, kind: str) -> None:
             return
 
     raise InvalidBehaviorCode(f"Falta la función principal {expected_name}()")
+
+
+def validate_behavior_code(code: str, kind: str) -> None:
+    _check_length(code)
+
+    parsed_tree = _check_syntax(code)
+
+    BehaviorValidator().visit(parsed_tree)
+
+    _check_contract_function(parsed_tree, kind)
