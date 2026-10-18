@@ -62,6 +62,7 @@ class BaseLeaguesApi:
         self,
         league_id: UUID,
         join_league_input: JoinLeagueInput,
+        club_id: UUID,
     ) -> None:
         """Reserva un cupo para la liga. Se definen 6 jugadores convocados para toda la liga (3 marcados como titulares por defecto, 3 como suplentes). Los titulares enviados se usan como fallback si el club no define la alineación antes de alguno de sus partidos."""
         ...
@@ -70,6 +71,7 @@ class BaseLeaguesApi:
     async def leave_league(
         self,
         league_id: UUID,
+        club_id: UUID,
     ) -> None:
         ...
 

@@ -69,7 +69,7 @@ async def test_get_behavior_return_behavior(
         id=behavior_id, 
         name="Correr", 
         code="def run(): pass", 
-        club_id=club_id
+        club_id=club_id,
     )
 
     mocked_repo = MagicMock()

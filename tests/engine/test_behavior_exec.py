@@ -433,3 +433,14 @@ def test_broken_player_does_not_stop_the_rest(state):
     actions = decide_actions(state, brains)
 
     assert set(actions) == {"h1", "h3", "a1", "a2", "a3"}
+
+
+# --- builtins e imports ---
+@pytest.mark.parametrize(
+    "line, expr",
+    [("import math", "math.sqrt(4)"), ("from math import sqrt", "sqrt(4)")],
+)
+def test_math_can_be_imported(state, line, expr):
+    code = f"{line}\ndef decide_action():\n    move({expr}, 0, 100)"
+
+    assert run_behavior(state, "h1", code) == Move(2.0, 0.0, 100.0)
