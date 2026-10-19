@@ -81,7 +81,7 @@ def _avoid_players(
         if distance == 0.0:
             continue  # para que no explote por dividir por 0
 
-        n_x, n_y = _normalize_vector(other_x - player_y, other_y - player_y)
+        n_x, n_y = _normalize_vector(other_x - player_x, other_y - player_y)
         towards = step_x * n_x + step_y * n_y  # cuanto del paso va hacia otro jugador
         allowed = max(0.0, distance - SOCIAL_DISTANCING)
         if towards > allowed:
