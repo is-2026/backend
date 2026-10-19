@@ -15,6 +15,7 @@ from app.engine.constants import (
     FIELD_HALF_WIDTH,
     GOAL_HALF_WIDTH,
     KICK_SPEED_RANGE,
+    SEPARATION_PASSES,
     SHOT_SPREAD_DEG,
     SOCIAL_DISTANCING,
     SPEED_MAX_RANGE,
@@ -80,7 +81,7 @@ def _avoid_players(
         if distance == 0.0:
             continue  # para que no explote por dividir por 0
 
-        n_x, n_y = _normalize_vector(other_x - player_y,  other_y - player_y)
+        n_x, n_y = _normalize_vector(other_x - player_y, other_y - player_y)
         towards = step_x * n_x + step_y * n_y  # cuanto del paso va hacia otro jugador
         allowed = max(0.0, distance - SOCIAL_DISTANCING)
         if towards > allowed:
@@ -108,6 +109,28 @@ def _move_players(state: MatchState, actions: dict[str, Action]) -> None:
             )
             player.x = _clamp(player.x + step_x, -FIELD_HALF_LENGTH, FIELD_HALF_LENGTH)
             player.y = _clamp(player.y + step_y, -FIELD_HALF_WIDTH, FIELD_HALF_WIDTH)
+
+
+def _separate_players(state: MatchState) -> None:
+    for _ in range(SEPARATION_PASSES):
+        for i in range(len(state.players)):
+            for j in range(i + 1, len(state.players)):
+                a, b = state.players[i], state.players[j]
+
+                dx, dy = b.x - a.x, b.y - a.y
+                distance = hypot(dx, dy)
+                if distance >= SOCIAL_DISTANCING:
+                    continue
+                if distance == 0:
+                    # misma posición exacta, rivales se separan en x, compañeros en y
+                    nx, ny = (1.0, 0.0) if a.side != b.side else (0.0, 1.0)
+                else:
+                    nx, ny = dx / distance, dy / distance
+                push = (SOCIAL_DISTANCING - distance) / 2
+                a.x = _clamp(a.x - nx * push, -FIELD_HALF_LENGTH, FIELD_HALF_LENGTH)
+                a.y = _clamp(a.y - ny * push, -FIELD_HALF_WIDTH, FIELD_HALF_WIDTH)
+                b.x = _clamp(b.x + nx * push, -FIELD_HALF_LENGTH, FIELD_HALF_LENGTH)
+                b.y = _clamp(b.y + ny * push, -FIELD_HALF_WIDTH, FIELD_HALF_WIDTH)
 
 
 def _ball_in_goal(state: MatchState) -> bool:
@@ -274,6 +297,8 @@ def step(
     _resolve_kicks(state, actions, rng)
 
     _move_players(state, actions)
+
+    _separate_players(state)
 
     _move_ball(state)
 
