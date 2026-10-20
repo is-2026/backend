@@ -12,13 +12,13 @@ Do not edit the class manually.
 """  # noqa: E501
 
 from __future__ import annotations
+
+import json
 import pprint
 import re  # noqa: F401
-import json
-
+from typing import Any, ClassVar, Dict, List, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
-from typing import Any, ClassVar, Dict, List, Literal
 
 try:
     from typing import Self
@@ -97,3 +97,10 @@ class CreateBehaviorInput(BaseModel):
             }
         )
         return _obj
+
+
+class UpdateBehaviorInput(BaseModel):
+    name: StrictStr
+    code: StrictStr = Field(
+        description="Código del comportamiento en Python. Se debe verificar. Ver las primitivas válidas en la especificación de la API de comportamientos "
+    )

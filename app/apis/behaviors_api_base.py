@@ -4,7 +4,7 @@ from typing import Any, ClassVar, Dict, List, Tuple  # noqa: F401
 from uuid import UUID
 
 from app.models.behavior import Behavior
-from app.models.create_behavior_input import CreateBehaviorInput
+from app.models.create_behavior_input import CreateBehaviorInput, UpdateBehaviorInput
 from app.models.error import Error
 from app.security_api import get_token_bearerAuth
 
@@ -41,7 +41,7 @@ class BaseBehaviorsApi:
     async def update_behavior(
         self,
         behavior_id: UUID,
-        create_behavior_input: CreateBehaviorInput,
+        update_behavior_input: UpdateBehaviorInput,
         club_id : UUID
     ) -> Behavior:
         ...

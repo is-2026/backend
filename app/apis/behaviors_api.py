@@ -25,7 +25,7 @@ from fastapi import (  # noqa: F401
 from typing import Any, List
 from uuid import UUID
 from app.models.behavior import Behavior
-from app.models.create_behavior_input import CreateBehaviorInput
+from app.models.create_behavior_input import CreateBehaviorInput, UpdateBehaviorInput
 from app.models.error import Error
 from app.models.extra_models import TokenModel  # noqa: F401
 from app.security_api import get_token_bearerAuth
@@ -119,13 +119,13 @@ async def get_behavior(
 )
 async def update_behavior(
     behavior_id: UUID = Path(..., description=""),
-    create_behavior_input: CreateBehaviorInput = Body(..., description=""),
+    update_behavior_input: UpdateBehaviorInput = Body(..., description=""),
     club: ClubDB = Security(get_current_club),
     session: AsyncSession = Depends(get_session),
 ) -> Behavior:
     if not BaseBehaviorsApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseBehaviorsApi.subclasses[0](session).update_behavior(behavior_id, create_behavior_input, club.id)
+    return await BaseBehaviorsApi.subclasses[0](session).update_behavior(behavior_id, update_behavior_input, club.id)
 
 
 @router.delete(
