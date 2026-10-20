@@ -62,6 +62,7 @@ async def list_behaviors(
 
 @router.post(
     "/club/behaviors",
+    status_code=status.HTTP_201_CREATED, #para que devuelva cuando la funcion anduvo bien
     responses={
         201: {"model": Behavior, "description": "Comportamiento creado"},
         400: {"model": Error, "description": "El código contiene errores de sintaxis o instrucciones prohibidas"},
@@ -74,13 +75,12 @@ async def list_behaviors(
 )
 async def create_behavior(
     create_behavior_input: CreateBehaviorInput = Body(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    club: ClubDB = Security(get_current_club), #get_current_club me valida el token
+    session: AsyncSession = Depends(get_session), 
 ) -> Behavior:
     if not BaseBehaviorsApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseBehaviorsApi.subclasses[0]().create_behavior(create_behavior_input)
+    return await BaseBehaviorsApi.subclasses[0](session).create_behavior(create_behavior_input, club.id)
 
 
 @router.get(

@@ -32,3 +32,9 @@ class BehaviorDB(Base):
         nullable=False, 
         index=True
     )
+    kind : Mapped[str] = mapped_column(
+        String(10),
+        default = "player",
+        server_default = "player",
+        nullable = False,        
+    )
