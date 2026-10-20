@@ -49,3 +49,21 @@ class BehaviorRepository:
 
         await self._session.refresh(behavior)
         return behavior
+
+    async def update(
+        self, behavior_id: uuid.UUID, club_id: uuid.UUID, name: str, code: str
+    ) -> BehaviorDB:
+        behavior_updt = await self.get_id_and_club(behavior_id, club_id)
+        if behavior_updt is None:
+            return None
+
+        behavior_updt.name = name
+        behavior_updt.code = code
+        try:
+            await self._session.commit()
+        except IntegrityError as info_exc:
+            await self._session.rollback()
+            raise DuplicateNameBehavior() from info_exc
+
+        await self._session.refresh(behavior_updt)
+        return behavior_updt

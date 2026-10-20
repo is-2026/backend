@@ -120,13 +120,12 @@ async def get_behavior(
 async def update_behavior(
     behavior_id: UUID = Path(..., description=""),
     create_behavior_input: CreateBehaviorInput = Body(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
 ) -> Behavior:
     if not BaseBehaviorsApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseBehaviorsApi.subclasses[0]().update_behavior(behavior_id, create_behavior_input)
+    return await BaseBehaviorsApi.subclasses[0](session).update_behavior(behavior_id, create_behavior_input, club.id)
 
 
 @router.delete(

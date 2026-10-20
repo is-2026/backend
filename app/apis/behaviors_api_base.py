@@ -42,6 +42,7 @@ class BaseBehaviorsApi:
         self,
         behavior_id: UUID,
         create_behavior_input: CreateBehaviorInput,
+        club_id : UUID
     ) -> Behavior:
         ...
 
