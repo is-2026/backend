@@ -15,7 +15,9 @@ from app.engine.constants import (
     FIELD_HALF_WIDTH,
     GOAL_HALF_WIDTH,
     KICK_SPEED_RANGE,
+    SEPARATION_PASSES,
     SHOT_SPREAD_DEG,
+    SOCIAL_DISTANCING,
     SPEED_MAX_RANGE,
     TICKS_PER_MINUTE,
 )
@@ -64,17 +66,71 @@ def _normalize_vector(dx: float, dy: float) -> tuple[float, float]:
     return dx / magnitude, dy / magnitude
 
 
+def _avoid_players(
+    player_id: str,
+    step_x: float,
+    step_y: float,
+    initial_positions: dict[str, tuple[float, float]],
+) -> tuple[float, float]:
+    player_x, player_y = initial_positions[player_id]
+    for other_id, (other_x, other_y) in initial_positions.items():
+        if other_id == player_id:
+            continue
+
+        distance = hypot(player_x - other_x, player_y - other_y)
+        if distance == 0.0:
+            continue  # para que no explote por dividir por 0
+
+        n_x, n_y = _normalize_vector(other_x - player_x, other_y - player_y)
+        towards = step_x * n_x + step_y * n_y  # cuanto del paso va hacia otro jugador
+        allowed = max(0.0, distance - SOCIAL_DISTANCING)
+        if towards > allowed:
+            step_x -= (towards - allowed) * n_x
+            step_y -= (towards - allowed) * n_y
+
+    return step_x, step_y
+
+
 def _move_players(state: MatchState, actions: dict[str, Action]) -> None:
+    # guardo las posiciones iniciales de los jugadores ya que lo voy a necesitar
+    # para calcular la separación de los jugadores
+    # (los jugadores se mueven todos al mismo tiempo)
+    initial_positions = {player.id: (player.x, player.y) for player in state.players}
     for player in state.players:
         action = actions.get(player.id)
         if isinstance(action, Move):
             x_normalized, y_normalized = _normalize_vector(action.dx, action.dy)
             max_speed = _scale(player.speed, SPEED_MAX_RANGE)
             pct = _clamp(action.speed_pct, 0, 100) / 100
-            player.x += x_normalized * pct * max_speed * DT
-            player.x = _clamp(player.x, -FIELD_HALF_LENGTH, FIELD_HALF_LENGTH)
-            player.y += y_normalized * pct * max_speed * DT
-            player.y = _clamp(player.y, -FIELD_HALF_WIDTH, FIELD_HALF_WIDTH)
+            step_x = x_normalized * pct * max_speed * DT
+            step_y = y_normalized * pct * max_speed * DT
+            step_x, step_y = _avoid_players(
+                player.id, step_x, step_y, initial_positions
+            )
+            player.x = _clamp(player.x + step_x, -FIELD_HALF_LENGTH, FIELD_HALF_LENGTH)
+            player.y = _clamp(player.y + step_y, -FIELD_HALF_WIDTH, FIELD_HALF_WIDTH)
+
+
+def _separate_players(state: MatchState) -> None:
+    for _ in range(SEPARATION_PASSES):
+        for i in range(len(state.players)):
+            for j in range(i + 1, len(state.players)):
+                a, b = state.players[i], state.players[j]
+
+                dx, dy = b.x - a.x, b.y - a.y
+                distance = hypot(dx, dy)
+                if distance >= SOCIAL_DISTANCING:
+                    continue
+                if distance == 0:
+                    # misma posición exacta, rivales se separan en x, compañeros en y
+                    nx, ny = (1.0, 0.0) if a.side != b.side else (0.0, 1.0)
+                else:
+                    nx, ny = dx / distance, dy / distance
+                push = (SOCIAL_DISTANCING - distance) / 2
+                a.x = _clamp(a.x - nx * push, -FIELD_HALF_LENGTH, FIELD_HALF_LENGTH)
+                a.y = _clamp(a.y - ny * push, -FIELD_HALF_WIDTH, FIELD_HALF_WIDTH)
+                b.x = _clamp(b.x + nx * push, -FIELD_HALF_LENGTH, FIELD_HALF_LENGTH)
+                b.y = _clamp(b.y + ny * push, -FIELD_HALF_WIDTH, FIELD_HALF_WIDTH)
 
 
 def _ball_in_goal(state: MatchState) -> bool:
@@ -241,6 +297,8 @@ def step(
     _resolve_kicks(state, actions, rng)
 
     _move_players(state, actions)
+
+    _separate_players(state)
 
     _move_ball(state)
 
