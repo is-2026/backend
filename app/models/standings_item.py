@@ -35,13 +35,15 @@ class StandingsItem(BaseModel):
     club_id: Optional[UUID] = None
     club_name: Optional[StrictStr] = None
     points: Optional[StrictInt] = None
+    rank: Optional[StrictInt] = None
     matches_played: Optional[StrictInt] = None
     won: Optional[StrictInt] = None
     drawn: Optional[StrictInt] = None
     lost: Optional[StrictInt] = None
     goals_for: Optional[StrictInt] = None
     goals_against: Optional[StrictInt] = None
-    __properties: ClassVar[List[str]] = ["club_id", "club_name", "points", "matches_played", "won", "drawn", "lost", "goals_for", "goals_against"]
+    goals_dif: Optional[StrictInt] = None
+    __properties: ClassVar[List[str]] = ["club_id", "club_name", "points", "rank", "matches_played", "won", "drawn", "lost", "goals_for", "goals_against", "goals_dif"]
 
     model_config = {
         "populate_by_name": True,
@@ -95,12 +97,14 @@ class StandingsItem(BaseModel):
             "club_id": obj.get("club_id"),
             "club_name": obj.get("club_name"),
             "points": obj.get("points"),
+            "rank": obj.get("rank"),
             "matches_played": obj.get("matches_played"),
             "won": obj.get("won"),
             "drawn": obj.get("drawn"),
             "lost": obj.get("lost"),
             "goals_for": obj.get("goals_for"),
-            "goals_against": obj.get("goals_against")
+            "goals_against": obj.get("goals_against"),
+            "goals_dif": obj.get("goals_dif")
         })
         return _obj
 
