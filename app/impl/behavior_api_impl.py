@@ -82,6 +82,11 @@ class BehaviorApiImpl(BaseBehaviorsApi):
         if behavior is None:
             raise HTTPException(status_code=404, detail="El comportamiento no existe")
 
+        if await repo.is_assigned(behavior_id):
+            raise HTTPException(
+                status_code=409, detail="El comportamiento esta asignado a un jugador"
+            )
+
         name = (
             update_behavior_input.name.strip()
         )  # el strip quita los espacios y saltos de linea del name
@@ -102,6 +107,9 @@ class BehaviorApiImpl(BaseBehaviorsApi):
             raise HTTPException(
                 status_code=409, detail="El nombre ingresado no esta disponible"
             )
+        
+        if updt_behavior is None:
+            raise HTTPException(status_code=404, detail="El comportamiento no existe")
 
         return Behavior(
             id=updt_behavior.id,
