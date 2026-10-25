@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from pydantic import BaseModel
@@ -103,6 +103,44 @@ class MatchFinishedMessage(BaseModel):
     data: MatchFinishedData
 
 
+class CoolingBreakStartData(BaseModel):
+    match_id: str
+    tick: int
+    cooling_break_number: int
+    cooling_break_start: datetime
+    ends_at: datetime
+
+
+class CoolingBreakStartMessage(BaseModel):
+    type: Literal["coolingBreakStart"] = "coolingBreakStart"
+    data: CoolingBreakStartData
+
+
+class HalftimeStartData(BaseModel):
+    match_id: str
+    tick: int
+    halftime_start: datetime
+    ends_at: datetime
+
+
+class HalftimeStartMessage(BaseModel):
+    type: Literal["halftimeStart"] = "halftimeStart"
+    data: HalftimeStartData
+
+
+class MatchResumedData(BaseModel):
+    match_id: str
+    tick: int
+    resume_type: Literal[
+        "after_cooling_break_1", "after_cooling_break_2", "after_halftime"
+    ]
+
+
+class MatchResumedMessage(BaseModel):
+    type: Literal["matchResumed"] = "matchResumed"
+    data: MatchResumedData
+
+
 def match_started_message(
     match_id: str, info: MatchInfo, match_start: datetime, state: MatchState
 ) -> MatchStartedMessage:
@@ -160,5 +198,52 @@ def match_finished_message(match_id: str, state: MatchState) -> MatchFinishedMes
             home_score=state.home_score,
             away_score=state.away_score,
             match_end=datetime.now(timezone.utc),
+        )
+    )
+
+
+def cooling_break_start_message(
+    match_id: str, state: MatchState, cooling_break_number: int, seconds: float
+) -> CoolingBreakStartMessage:
+    """Se llama cuando se llega al tick que indica el incio de algún cooling break"""
+    now = datetime.now(timezone.utc)
+    return CoolingBreakStartMessage(
+        data=CoolingBreakStartData(
+            match_id=match_id,
+            tick=state.tick,
+            cooling_break_number=cooling_break_number,
+            cooling_break_start=now,
+            ends_at=now + timedelta(seconds=seconds),
+        )
+    )
+
+
+def halftime_start_message(
+    match_id: str, state: MatchState, seconds: float
+) -> HalftimeStartMessage:
+    """Se llama cuando se llega al tick que indica el inicio del entretiempo"""
+    now = datetime.now(timezone.utc)
+    return HalftimeStartMessage(
+        data=HalftimeStartData(
+            match_id=match_id,
+            tick=state.tick,
+            halftime_start=now,
+            ends_at=now + timedelta(seconds=seconds),
+        )
+    )
+
+
+def match_resumed_message(
+    match_id: str,
+    state: MatchState,
+    resume_type: Literal[
+        "after_cooling_break_1", "after_cooling_break_2", "after_halftime"
+    ],
+) -> MatchResumedMessage:
+    return MatchResumedMessage(
+        data=MatchResumedData(
+            match_id=match_id,
+            tick=state.tick,
+            resume_type=resume_type,
         )
     )
