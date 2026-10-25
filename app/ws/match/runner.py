@@ -12,13 +12,12 @@ from app.engine.state import MatchState
 from app.ws.connection_manager import ConnectionManager
 from app.ws.match.messages import (
     MatchInfo,
-    cooling_break_start_message,
     goal_message,
-    halftime_start_message,
     match_finished_message,
     match_resumed_message,
     match_started_message,
     match_state_message,
+    pause_start_message,
 )
 from app.ws.match.pauses import (
     COOLING_BREAK_SECONDS,
@@ -59,6 +58,8 @@ def start_match(
     *,
     tick_interval: float = DT,
     start_delay: float = START_DELAY_SECONDS,
+    cooling_break_duration: float = COOLING_BREAK_SECONDS,
+    halftime_duration: float = HALFTIME_SECONDS,
 ) -> LiveMatch:
     """Prepara el partido, lo anota en live_matches y lo larga como tarea de fondo.
     codes = player_id -> código del comportamiento.
@@ -77,8 +78,24 @@ def start_match(
     # el que se conecta durante la espera ya ve a los jugadores en formación (tick 0)
     live.last_state = _state_payload(live)
     live_matches[match_id] = live
-    live.task = asyncio.create_task(run_match(live, tick_interval, start_delay))
+    live.task = asyncio.create_task(
+        run_match(
+            live, tick_interval, start_delay, cooling_break_duration, halftime_duration
+        )
+    )
     return live
+
+
+async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
+    """Avisa la pausa, espera y avisa la reanudación del partido"""
+    match_id = str(live.match_id)
+    started = pause_start_message(match_id, live.state, pause, seconds)
+    await match_connections.broadcast(live.match_id, started.model_dump(mode="json"))
+
+    await asyncio.sleep(seconds)
+
+    resumed = match_resumed_message(match_id, live.state, pause)
+    await match_connections.broadcast(live.match_id, resumed.model_dump(mode="json"))
 
 
 async def run_match(
@@ -90,6 +107,7 @@ async def run_match(
 ) -> None:
     """Espera start_delay y juega hasta total_ticks.
     Por tick: decide_actions -> step -> goal(s) -> matchState.
+    Si hay una pausa espera y envía los avisos correspondientes.
     Al terminar bien se manda matchFinished, luego lo saca de live_matches
     y cierra las conexiones (también si se cierra mal)."""
     loop = asyncio.get_running_loop()
@@ -99,44 +117,6 @@ async def run_match(
         await asyncio.sleep(start_delay)
         next_tick = loop.time()
         while live.state.tick < live.state.total_ticks:
-            if live.state.tick in pause_schedule:
-                pause = pause_schedule.get(live.state.tick)
-                match pause:
-                    case Pause.COOLING_BREAK_1:
-                        message = cooling_break_start_message(
-                            str(live.match_id), live.state, 1, cooling_break_duration
-                        )
-                        message_resumed = match_resumed_message(
-                            str(live.match_id), live.state, "after_cooling_break_1"
-                        )
-                        duration = cooling_break_duration
-                    case Pause.COOLING_BREAK_2:
-                        message = cooling_break_start_message(
-                            str(live.match_id), live.state, 2, cooling_break_duration
-                        )
-                        message_resumed = match_resumed_message(
-                            str(live.match_id), live.state, "after_cooling_break_2"
-                        )
-                        duration = cooling_break_duration
-                    case Pause.HALFTIME:
-                        message = halftime_start_message(
-                            str(live.match_id), live.state, halftime_duration
-                        )
-                        message_resumed = match_resumed_message(
-                            str(live.match_id), live.state, "after_halftime"
-                        )
-                        duration = halftime_duration
-                await match_connections.broadcast(
-                    live.match_id, message.model_dump(mode="json")
-                )
-                await asyncio.sleep(duration)
-
-                await match_connections.broadcast(
-                    live.match_id, message_resumed.model_dump(mode="json")
-                )
-
-                next_tick = loop.time()
-
             actions = decide_actions(live.state, live.brains)
             goals = step(live.state, actions, rng)
 
@@ -148,6 +128,17 @@ async def run_match(
 
             live.last_state = _state_payload(live)
             await match_connections.broadcast(live.match_id, live.last_state)
+
+            pause = pause_schedule.get(live.state.tick)
+            if pause is not None:
+                pause_duration = (
+                    halftime_duration
+                    if pause == Pause.HALFTIME
+                    else cooling_break_duration
+                )
+                await _pause(live, pause, pause_duration)
+                # el próximo tick se cuenta desde ahora
+                next_tick = loop.time()
 
             # dormir hasta el próximo tick descontando lo que tardó este,
             # así el partido dura lo que tiene que durar

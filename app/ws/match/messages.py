@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from app.engine.constants import TICKS_PER_MINUTE
 from app.engine.events import GoalEvent
 from app.engine.state import MatchState
+from app.ws.match.pauses import Pause
 
 
 class Position(BaseModel):
@@ -202,48 +203,41 @@ def match_finished_message(match_id: str, state: MatchState) -> MatchFinishedMes
     )
 
 
-def cooling_break_start_message(
-    match_id: str, state: MatchState, cooling_break_number: int, seconds: float
-) -> CoolingBreakStartMessage:
-    """Se llama cuando se llega al tick que indica el incio de algún cooling break"""
+def pause_start_message(
+    match_id: str, state: MatchState, pause: Pause, seconds: float
+) -> CoolingBreakStartMessage | HalftimeStartMessage:
+    """Aviso de que empezó pause. seconds es lo que va a durar de verdad"""
     now = datetime.now(timezone.utc)
-    return CoolingBreakStartMessage(
-        data=CoolingBreakStartData(
-            match_id=match_id,
-            tick=state.tick,
-            cooling_break_number=cooling_break_number,
-            cooling_break_start=now,
-            ends_at=now + timedelta(seconds=seconds),
+    ends_at = now + timedelta(seconds=seconds)
+    if pause == Pause.HALFTIME:
+        return HalftimeStartMessage(
+            data=HalftimeStartData(
+                match_id=match_id,
+                tick=state.tick,
+                halftime_start=now,
+                ends_at=ends_at,
+            )
         )
-    )
-
-
-def halftime_start_message(
-    match_id: str, state: MatchState, seconds: float
-) -> HalftimeStartMessage:
-    """Se llama cuando se llega al tick que indica el inicio del entretiempo"""
-    now = datetime.now(timezone.utc)
-    return HalftimeStartMessage(
-        data=HalftimeStartData(
-            match_id=match_id,
-            tick=state.tick,
-            halftime_start=now,
-            ends_at=now + timedelta(seconds=seconds),
+    else:
+        return CoolingBreakStartMessage(
+            data=CoolingBreakStartData(
+                match_id=match_id,
+                tick=state.tick,
+                cooling_break_number=1 if pause == Pause.COOLING_BREAK_1 else 2,
+                cooling_break_start=now,
+                ends_at=ends_at,
+            )
         )
-    )
 
 
 def match_resumed_message(
-    match_id: str,
-    state: MatchState,
-    resume_type: Literal[
-        "after_cooling_break_1", "after_cooling_break_2", "after_halftime"
-    ],
+    match_id: str, state: MatchState, pause: Pause
 ) -> MatchResumedMessage:
+    """Aviso de que terminó pause. El tick es el mismo del inicio"""
     return MatchResumedMessage(
         data=MatchResumedData(
             match_id=match_id,
             tick=state.tick,
-            resume_type=resume_type,
+            resume_type=f"after_{pause}",
         )
     )
