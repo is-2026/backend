@@ -12,20 +12,12 @@ from app.engine.state import MatchState
 from app.ws.connection_manager import ConnectionManager
 from app.ws.match.messages import (
     MatchInfo,
-    cooling_break_start_message,
     goal_message,
-    halftime_start_message,
     match_finished_message,
     match_resumed_message,
     match_started_message,
     match_state_message,
     pause_start_message,
-)
-from app.ws.match.pauses import (
-    COOLING_BREAK_SECONDS,
-    HALFTIME_SECONDS,
-    Pause,
-    pauses_schedule,
 )
 from app.ws.match.pauses import (
     COOLING_BREAK_SECONDS,
@@ -132,44 +124,6 @@ async def run_match(
         await asyncio.sleep(start_delay)
         next_tick = loop.time()
         while live.state.tick < live.state.total_ticks:
-            if live.state.tick in pause_schedule:
-                pause = pause_schedule.get(live.state.tick)
-                match pause:
-                    case Pause.COOLING_BREAK_1:
-                        message = cooling_break_start_message(
-                            str(live.match_id), live.state, 1, cooling_break_duration
-                        )
-                        message_resumed = match_resumed_message(
-                            str(live.match_id), live.state, "after_cooling_break_1"
-                        )
-                        duration = cooling_break_duration
-                    case Pause.COOLING_BREAK_2:
-                        message = cooling_break_start_message(
-                            str(live.match_id), live.state, 2, cooling_break_duration
-                        )
-                        message_resumed = match_resumed_message(
-                            str(live.match_id), live.state, "after_cooling_break_2"
-                        )
-                        duration = cooling_break_duration
-                    case Pause.HALFTIME:
-                        message = halftime_start_message(
-                            str(live.match_id), live.state, halftime_duration
-                        )
-                        message_resumed = match_resumed_message(
-                            str(live.match_id), live.state, "after_halftime"
-                        )
-                        duration = halftime_duration
-                await match_connections.broadcast(
-                    live.match_id, message.model_dump(mode="json")
-                )
-                await asyncio.sleep(duration)
-
-                await match_connections.broadcast(
-                    live.match_id, message_resumed.model_dump(mode="json")
-                )
-
-                next_tick = loop.time()
-
             actions = decide_actions(live.state, live.brains)
             goals = step(live.state, actions, rng)
 
