@@ -23,6 +23,13 @@ NO_WAIT = {
     "halftime_duration": 0,
 }
 
+NO_WAIT = {
+    "tick_interval": 0,
+    "start_delay": 0,
+    "cooling_break_duration": 0,
+    "halftime_duration": 0,
+}
+
 
 @pytest.fixture
 def match_id():
