@@ -37,6 +37,8 @@ def match_id(client, match_state, match_info):
             match_info,
             tick_interval=0.01,
             start_delay=0.2,
+            cooling_break_duration=0,
+            halftime_duration=0,
         )
     )
     # client.portal.call(...) existe porque start_match usa create_task, que necesita el event loop de la app.
@@ -112,7 +114,11 @@ def test_match_started_has_clubs_and_lineups(client, match_id):
     data = started["data"]
     assert started["type"] == "matchStarted"
     assert data["match_id"] == str(match_id)
-    assert data["home_club"] == {"id": "club-local", "name": "Local", "avatar_url": "https://x/local.png"}
+    assert data["home_club"] == {
+        "id": "club-local",
+        "name": "Local",
+        "avatar_url": "https://x/local.png",
+    }
     assert len(data["home_lineup"]) == len(data["away_lineup"]) == 6
     assert data["total_ticks"] == 20
     assert data["status"] == "in_progress"

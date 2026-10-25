@@ -16,6 +16,13 @@ from tests.ws.conftest import FakeWebSocket
 
 TOTAL_TICKS = 5
 
+NO_WAIT = {
+    "tick_interval": 0,
+    "start_delay": 0,
+    "cooling_break_duration": 0,
+    "halftime_duration": 0,
+}
+
 
 @pytest.fixture
 def match_id():
@@ -44,7 +51,7 @@ def client(match_id):
 
 
 async def test_sends_one_match_state_per_tick(live, client):
-    await run_match(live, tick_interval=0, start_delay=0)
+    await run_match(live, **NO_WAIT)
 
     states = [m for m in client.sent if m["type"] == "matchState"]
     assert [m["data"]["tick"] for m in states] == [1, 2, 3, 4, 5]
@@ -52,7 +59,7 @@ async def test_sends_one_match_state_per_tick(live, client):
 
 
 async def test_sends_match_finished_and_closes_at_the_end(live, client, match_id):
-    await run_match(live, tick_interval=0, start_delay=0)
+    await run_match(live, **NO_WAIT)
 
     assert client.sent[-1]["type"] == "matchFinished"
     assert client.sent[-1]["data"]["tick"] == TOTAL_TICKS
@@ -66,9 +73,7 @@ async def test_start_match_sets_tick_0_and_runs_in_background(
     match_state.total_ticks = TOTAL_TICKS
     match_state.home_score = 3  # kickoff lo tiene que resetear
 
-    live = start_match(
-        match_id, match_state, {}, match_info, tick_interval=0, start_delay=0
-    )
+    live = start_match(match_id, match_state, {}, match_info, **NO_WAIT)
 
     assert live_matches[match_id] is live
     assert live.last_state["data"]["tick"] == 0
@@ -80,7 +85,9 @@ async def test_start_match_sets_tick_0_and_runs_in_background(
     assert match_id not in live_matches
 
 
-async def test_start_match_saves_info_and_match_start(match_state, match_info, match_id):
+async def test_start_match_saves_info_and_match_start(
+    match_state, match_info, match_id
+):
     before = datetime.now(timezone.utc)
 
     live = start_match(match_id, match_state, {}, match_info, start_delay=60)
