@@ -60,6 +60,9 @@ class MatchInfo(BaseModel):
     away_lineup: list[LineupPlayer]
 
 
+MatchStatus = Literal["in_progress", "paused", "finished"]
+
+
 class MatchStartedData(MatchInfo):
     match_id: str
     match_start: datetime
@@ -67,7 +70,7 @@ class MatchStartedData(MatchInfo):
     total_ticks: int
     home_score: int
     away_score: int
-    status: Literal["in_progress", "paused", "finished"] = "in_progress"
+    status: MatchStatus = "in_progress"
 
 
 class MatchStartedMessage(BaseModel):
@@ -143,7 +146,11 @@ class MatchResumedMessage(BaseModel):
 
 
 def match_started_message(
-    match_id: str, info: MatchInfo, match_start: datetime, state: MatchState
+    match_id: str,
+    info: MatchInfo,
+    match_start: datetime,
+    state: MatchState,
+    status: MatchStatus = "in_progress",
 ) -> MatchStartedMessage:
     """Lo fijo sale de `info`; tick y marcador, del estado en este momento."""
     return MatchStartedMessage(
@@ -155,6 +162,7 @@ def match_started_message(
             total_ticks=state.total_ticks,
             home_score=state.home_score,
             away_score=state.away_score,
+            status=status,
         )
     )
 

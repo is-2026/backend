@@ -41,6 +41,8 @@ class LiveMatch:
     match_start: datetime  # cuándo termina la espera y empieza a correr el partido
     # último matchState ya serializado, para el que se conecta
     last_state: dict | None = None
+    # inicio de la pausa en curso ya serializado para el que se une justo en la pausa
+    current_pause: dict | None = None
     # referencia a la tarea, si nadie la guarda, se puede perder
     task: asyncio.Task | None = None
 
@@ -89,11 +91,14 @@ def start_match(
 async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
     """Avisa la pausa, espera y avisa la reanudación del partido"""
     match_id = str(live.match_id)
-    started = pause_start_message(match_id, live.state, pause, seconds)
-    await match_connections.broadcast(live.match_id, started.model_dump(mode="json"))
+    live.current_pause = pause_start_message(
+        match_id, live.state, pause, seconds
+    ).model_dump(mode="json")
+    await match_connections.broadcast(live.match_id, live.current_pause)
 
     await asyncio.sleep(seconds)
 
+    live.current_pause = None
     resumed = match_resumed_message(match_id, live.state, pause)
     await match_connections.broadcast(live.match_id, resumed.model_dump(mode="json"))
 
@@ -165,7 +170,8 @@ def _state_payload(live: LiveMatch) -> dict:
 def started_payload(live: LiveMatch) -> dict:
     """matchStarted para el que se acaba de conectar, con el tick y marcador de ahora.
     exclude_none: los suplentes no llevan behavior_id/behavior_name (en vez de null)."""
+    status = "paused" if live.current_pause is not None else "in_progress"
     message = match_started_message(
-        str(live.match_id), live.info, live.match_start, live.state
+        str(live.match_id), live.info, live.match_start, live.state, status
     )
     return message.model_dump(mode="json", exclude_none=True)
