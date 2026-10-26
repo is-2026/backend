@@ -5,9 +5,9 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from app.engine.behavior_exec import PlayerBrain, create_brains, decide_actions
 from app.engine.constants import DT
 from app.engine.engine import kickoff, step
+from app.engine.executor import BehaviorExecutor
 from app.engine.state import MatchState
 from app.ws.connection_manager import ConnectionManager
 from app.ws.match.messages import (
@@ -35,7 +35,7 @@ START_DELAY_SECONDS = 3.0  # tiempo para que los clientes se conecten antes del 
 class LiveMatch:
     match_id: uuid.UUID
     state: MatchState
-    brains: dict[str, PlayerBrain]
+    executor: BehaviorExecutor
     # lo fijo de matchStarted (clubes y alineaciones)
     info: MatchInfo
     match_start: datetime  # cuándo termina la espera y empieza a correr el partido
@@ -73,7 +73,7 @@ def start_match(
     live = LiveMatch(
         match_id=match_id,
         state=state,
-        brains=create_brains(state, codes),
+        executor=BehaviorExecutor(state, codes),
         info=info,
         match_start=datetime.now(timezone.utc) + timedelta(seconds=start_delay),
     )
@@ -127,7 +127,7 @@ async def run_match(
         await asyncio.sleep(start_delay)
         next_tick = loop.time()
         while live.state.tick < live.state.total_ticks:
-            actions = decide_actions(live.state, live.brains)
+            actions = await live.executor.decide(live.state)
             goals = step(live.state, actions, rng)
 
             for goal in goals:
@@ -165,6 +165,7 @@ async def run_match(
     finally:
         live_matches.pop(live.match_id, None)
         await match_connections.close_all(live.match_id)
+        live.executor.close()
 
 
 def _state_payload(live: LiveMatch) -> dict:
