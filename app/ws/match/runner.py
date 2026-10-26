@@ -118,6 +118,37 @@ async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
     await match_connections.broadcast(live.match_id, resumed.model_dump(mode="json"))
 
 
+async def _tick(live: LiveMatch, rng: random.Random) -> None:
+    """Avanza el partido un tick: decide -> step -> goal(s) -> matchState."""
+    actions = await live.executor.decide(live.state)
+    goals = step(live.state, actions, rng)
+
+    for goal in goals:
+        message = goal_message(str(live.match_id), goal, live.state)
+        await match_connections.broadcast(
+            live.match_id, message.model_dump(mode="json")
+        )
+
+    live.last_state = _state_payload(live)
+    await match_connections.broadcast(live.match_id, live.last_state)
+    
+
+
+async def _notify_finish(live: LiveMatch) -> None:
+    """Avisa que el partido terminó bien"""
+    finished = match_finished_message(str(live.match_id), live.state)
+    await match_connections.broadcast(live.match_id, finished.model_dump(mode="json"))
+
+
+async def _clear(live: LiveMatch) -> None:
+    """Cierra el partido, haya terminado bien o con error: lo saca de live_matches,
+    cierra las conexiones y el executor."""
+    live.phase = Phase.FINISHED
+    live_matches.pop(live.match_id, None)
+    await match_connections.close_all(live.match_id)
+    live.executor.close()
+
+
 async def run_match(
     live: LiveMatch,
     tick_interval: float = DT,
@@ -125,11 +156,8 @@ async def run_match(
     cooling_break_duration: float = COOLING_BREAK_SECONDS,
     halftime_duration: float = HALFTIME_SECONDS,
 ) -> None:
-    """Espera start_delay y juega hasta total_ticks.
-    Por tick: decide_actions -> step -> goal(s) -> matchState.
-    Si hay una pausa espera y envía los avisos correspondientes.
-    Al terminar bien se manda matchFinished, luego lo saca de live_matches
-    y cierra las conexiones (también si se cierra mal)."""
+    """Espera start_delay, juega hasta total_ticks con las pausas en el medio
+    y avisa el final. Pase lo que pase, al final cierra el partido con _clear."""
     loop = asyncio.get_running_loop()
     rng = random.Random()
     try:
@@ -138,17 +166,7 @@ async def run_match(
         live.phase = Phase.PLAYING
         next_tick = loop.time()
         while live.state.tick < live.state.total_ticks:
-            actions = await live.executor.decide(live.state)
-            goals = step(live.state, actions, rng)
-
-            for goal in goals:
-                message = goal_message(str(live.match_id), goal, live.state)
-                await match_connections.broadcast(
-                    live.match_id, message.model_dump(mode="json")
-                )
-
-            live.last_state = _state_payload(live)
-            await match_connections.broadcast(live.match_id, live.last_state)
+            await _tick(live, rng)
 
             pause = pause_schedule.get(live.state.tick)
             if pause is not None:
@@ -166,18 +184,11 @@ async def run_match(
             next_tick += tick_interval
             await asyncio.sleep(max(0.0, next_tick - loop.time()))
 
-        # cuando se termina de jugar:
-        finished = match_finished_message(str(live.match_id), live.state)
-        await match_connections.broadcast(
-            live.match_id, finished.model_dump(mode="json")
-        )
+        await _notify_finish(live)
     except Exception:
         logger.exception("El partido %s se cortó por un error", live.match_id)
     finally:
-        live.phase = Phase.FINISHED
-        live_matches.pop(live.match_id, None)
-        await match_connections.close_all(live.match_id)
-        live.executor.close()
+        await _clear(live)
 
 
 def _state_payload(live: LiveMatch) -> dict:
