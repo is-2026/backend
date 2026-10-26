@@ -58,5 +58,5 @@ class LeagueEnrollmentPlayerDB(Base):  # tabla para los jugadores del club
     )
     is_starter: Mapped[bool] = mapped_column(nullable=False)
     behavior_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("behaviors.id"), nullable=True
+        ForeignKey("behaviors.id", ondelete = "SET NULL"), nullable=True
     )  # solo titulares
