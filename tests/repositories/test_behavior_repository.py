@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 
+from sqlalchemy.exc import IntegrityError
 from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
 from app.db.user import UserDB
@@ -298,3 +299,171 @@ async def test_create_equal_name_2_club(session):
     assert result_b.name == "Pepito"
     assert result_b.code == "def run(): pass"
     assert result_b.kind == "player"
+
+
+async def test_update_succes(session):
+    user_id = uuid.uuid4()
+    user_db = UserDB(
+        id=user_id, email="test@example.com", hashed_password="password123"
+    )
+    session.add(user_db)
+    await session.commit()
+
+    # 2. Creo el Club
+    club_id = uuid.uuid4()
+    club_db = ClubDB(
+        id=club_id,
+        club_name="Club de Prueba",
+        avatar_url="https://example.com/avatar.png",
+        user_id=user_id,
+    )
+    session.add(club_db)
+    await session.flush()
+
+    behavior_id = uuid.uuid4()
+    behavior_db = BehaviorDB(
+        id = behavior_id,
+        name = "Correr",
+        code = "def decide_action():\n pass",
+        club_id = club_id,
+        kind= "player"
+    )
+    session.add(behavior_db)
+    await session.commit()
+
+    consult_repo = BehaviorRepository(session)
+    result = await consult_repo.update(
+        behavior_db.id, club_db.id, "Pepito", "def decide_action():\n x=912"
+    )
+    assert result is not None
+    assert result.id == behavior_db.id
+    assert result.name == "Pepito"
+    assert result.code == "def decide_action():\n x=912"
+
+async def test_update_none(session):
+    user_id = uuid.uuid4()
+    user_db = UserDB(
+        id=user_id, email="test@example.com", hashed_password="password123"
+    )
+    session.add(user_db)
+    await session.commit()
+
+    # 2. Creo el Club
+    club_id = uuid.uuid4()
+    club_db = ClubDB(
+        id=club_id,
+        club_name="Club de Prueba",
+        avatar_url="https://example.com/avatar.png",
+        user_id=user_id,
+    )
+    session.add(club_db)
+    await session.commit()
+
+    behavior_id = uuid.uuid4()
+
+    consult_repo = BehaviorRepository(session)
+    result = await consult_repo.update(
+        behavior_id, club_db.id, "Pepito", "def decide_action():\n x=912"
+    )
+    assert result == None
+
+async def test_update_other_club(session):
+    user_a_id = uuid.uuid4()
+    user_a_db = UserDB(
+        id=user_a_id, email="user_A@example.com", hashed_password="password123"
+    )
+    session.add(user_a_db)
+
+    user_b_id = uuid.uuid4()
+    user_b_db = UserDB(
+        id=user_b_id, email="user_B@example.com", hashed_password="password123"
+    )
+    session.add(user_b_db)
+    await session.commit()
+
+    # club a
+    club_a_id = uuid.uuid4()
+    club_a_db = ClubDB(
+        id=club_a_id,
+        club_name="Club de Prueba",
+        avatar_url="https://example.com/avatar.png",
+        user_id=user_a_id,
+    )
+    session.add(club_a_db)
+
+    # club b
+    club_b_id = uuid.uuid4()
+    club_b_db = ClubDB(
+        id=club_b_id,
+        club_name="Club de Prueba",
+        avatar_url="https://example.com/avatar.png",
+        user_id=user_b_id,
+    )
+    session.add(club_b_db)
+    await session.flush()
+
+    behavior_id = uuid.uuid4()
+    behavior_db = BehaviorDB(
+        id = behavior_id,
+        name = "Correr",
+        code = "def decide_action():\n pass",
+        club_id = club_a_id,
+        kind= "player"
+    )
+    session.add(behavior_db)
+    await session.commit()
+
+    consult_repo = BehaviorRepository(session)
+    result = await consult_repo.update(
+        behavior_db.id, club_b_db.id, "Pepito", "def decide_action():\n x=912"
+    )
+
+    assert result == None
+
+async def test_update_duplicate_name(session):
+    user_a_id = uuid.uuid4()
+    user_a_db = UserDB(
+        id=user_a_id, email="user_A@example.com", hashed_password="password123"
+    )
+    session.add(user_a_db)
+    await session.flush()
+    
+    # club 
+    club_id = uuid.uuid4()
+    club_db = ClubDB(
+        id=club_id,
+        club_name="Club de Prueba",
+        avatar_url="https://example.com/avatar.png",
+        user_id=user_a_id,
+    )
+    session.add(club_db)
+    await session.flush()
+
+    behavior_a_id = uuid.uuid4()
+    behavior_a_db = BehaviorDB(
+        id = behavior_a_id,
+        name = "Correr",
+        code = "def decide_action():\n pass",
+        club_id = club_db.id,
+        kind= "player"
+    )
+    session.add(behavior_a_db)
+    
+    behavior_b_id = uuid.uuid4()
+    behavior_b_db = BehaviorDB(
+        id = behavior_b_id,
+        name = "Dar Pase",
+        code = "def decide_action():\n pass",
+        club_id = club_db.id,
+        kind= "player"
+    )
+    session.add(behavior_b_db)
+    await session.commit()
+
+    consult_repo = BehaviorRepository(session)
+    with pytest.raises(DuplicateNameBehavior):
+        await consult_repo.update(
+            behavior_b_db.id, club_db.id, "Correr", "def decide_action():\n x=912"
+        )
+
+    
