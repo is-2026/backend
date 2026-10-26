@@ -14,7 +14,7 @@ from app.ws.match.runner import (
 )
 from tests.ws.conftest import FakeWebSocket
 
-TOTAL_TICKS = 5
+TOTAL_TICKS = 5  # pausas después de los ticks 1, 2 y 3
 
 NO_WAIT = {
     "tick_interval": 0,
@@ -112,3 +112,53 @@ def test_started_payload_uses_current_tick_and_score(live):
     sub = payload["data"]["home_lineup"][3]
     assert sub["is_starter"] is False
     assert "behavior_id" not in sub
+
+
+def summary(sent: list[dict]) -> list[tuple[str, int]]:
+    return [(m["type"], m["data"]["tick"]) for m in sent]
+
+
+async def test_pauses_after_each_quarter(live, client):
+    await run_match(live, **NO_WAIT)
+
+    # entre el inicio de la pausa y matchResumed no hay matchState
+    # y el tick no avanza
+    assert summary(client.sent) == [
+        ("matchState", 1),
+        ("coolingBreakStart", 1),
+        ("matchResumed", 1),
+        ("matchState", 2),
+        ("halftimeStart", 2),
+        ("matchResumed", 2),
+        ("matchState", 3),
+        ("coolingBreakStart", 3),
+        ("matchResumed", 3),
+        ("matchState", 4),
+        ("matchState", 5),
+        ("matchFinished", 5),
+    ]
+    breaks = [m for m in client.sent if m["type"] == "coolingBreakStart"]
+    assert [m["data"]["cooling_break_number"] for m in breaks] == [1, 2]
+    resumed = [m for m in client.sent if m["type"] == "matchResumed"]
+    assert [m["data"]["resume_type"] for m in resumed] == [
+        "after_cooling_break_1",
+        "after_halftime",
+        "after_cooling_break_2",
+    ]
+
+
+async def test_each_pause_last_its_duration_and_play_resumes(live, client):
+    await run_match(
+        live,
+        tick_interval=0.02,
+        start_delay=0,
+        cooling_break_duration=0.1,
+        halftime_duration=0.2,
+    )
+
+    types = [m["type"] for m in client.sent]
+    for start_type, duration in [("coolingBreakStart", 0.1), ("halftimeStart", 0.2)]:
+        i = types.index(start_type)
+        assert types[i + 1] == "matchResumed"
+        assert client.times[i+1] - client.times[i] == pytest.approx(duration, abs=0.03)
+        assert types[i + 2] == "matchState"
