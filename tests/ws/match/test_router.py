@@ -1,3 +1,4 @@
+import time
 import uuid
 from functools import partial
 
@@ -122,3 +123,35 @@ def test_match_started_has_clubs_and_lineups(client, match_id):
     assert len(data["home_lineup"]) == len(data["away_lineup"]) == 6
     assert data["total_ticks"] == 20
     assert data["status"] == "in_progress"
+
+
+def test_client_connecting_during_a_pause_gets_message(client, match_state, match_info):
+    match_id = uuid.uuid4()
+    match_state.total_ticks = 20  # pausas después de los ticks 5, 10 y 15
+    client.portal.call(
+        partial(
+            start_match,
+            match_id,
+            match_state,
+            {},
+            match_info,
+            tick_interval=0.01,
+            start_delay=0,
+            cooling_break_duration=1.0,
+            halftime_duration=0,
+        )
+    )
+    time.sleep(0.4)  # ya pasó el tick 5, estamos en la primera pausa de hidratación
+
+    with connect(client, match_id) as ws:
+        started = ws.receive_json()  # los va llenando por orden
+        state = ws.receive_json()
+        pause = ws.receive_json()
+        resumed = ws.receive_json()
+
+    assert started["data"]["status"] == "paused"
+    assert state["data"]["tick"] == 5
+    assert pause["type"] == "coolingBreakStart"
+    assert pause["data"]["cooling_break_number"] == 1
+    # al terminar la pausa también le llega, porque ya estaba anotado
+    assert resumed["type"] == "matchResumed"
