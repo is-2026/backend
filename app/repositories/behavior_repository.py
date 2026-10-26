@@ -11,6 +11,8 @@ from app.db.league import LeagueEnrollmentPlayerDB, LeagueEnrollmentDB, LeagueDB
 class DuplicateNameBehavior(Exception):
     """El nombre del comportamiento no esta disponible"""
 
+class BehaviorInUse(Exception):
+    """El comportamiento esta siendo utilizado en este momento"""
 
 class BehaviorRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -69,16 +71,43 @@ class BehaviorRepository:
         await self._session.refresh(behavior_updt)
         return behavior_updt
 
-    async def is_assigned(self, 
-                          behavior_id: uuid.UUID
-                          ) -> bool:
+    async def delete(self, behavior: BehaviorDB) -> None:
+        await self._session.delete(behavior)
+
+        try:
+            await self._session.commit()
+        except IntegrityError as info_exc:
+            await self._session.rollback()
+            raise BehaviorInUse() from info_exc
+        
+
+    async def is_assigned(self, behavior_id: uuid.UUID) -> bool:
         query = (
             select(LeagueEnrollmentPlayerDB.id)
-            .join(LeagueEnrollmentDB, LeagueEnrollmentDB.id == LeagueEnrollmentPlayerDB.enrollment_id)
+            .join(
+                LeagueEnrollmentDB,
+                LeagueEnrollmentDB.id == LeagueEnrollmentPlayerDB.enrollment_id,
+            )
             .join(LeagueDB, LeagueDB.id == LeagueEnrollmentDB.league_id)
             .where(
-                LeagueEnrollmentPlayerDB.behavior_id == behavior_id ,
-                LeagueDB.status == "started"
+                LeagueEnrollmentPlayerDB.behavior_id == behavior_id,
+                LeagueDB.status == "started",
+            )
+            .limit(1)
+        )
+        return (await self._session.scalar(query)) is not None
+
+    async def is_in_lineup(self, behavior_id: uuid.UUID) -> bool:
+        query = (
+            select(LeagueEnrollmentPlayerDB.id)
+            .join(
+                LeagueEnrollmentDB,
+                LeagueEnrollmentDB.id == LeagueEnrollmentPlayerDB.enrollment_id,
+            )
+            .join(LeagueDB, LeagueDB.id == LeagueEnrollmentDB.league_id)
+            .where(
+                LeagueEnrollmentPlayerDB.behavior_id == behavior_id,
+                LeagueDB.status.in_(["not_started", "started"]),
             )
             .limit(1)
         )
