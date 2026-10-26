@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.engine.executor import BehaviorExecutor
 from app.ws.close_codes import NORMAL
 from app.ws.match import runner
 from app.ws.match.runner import (
@@ -45,7 +46,7 @@ def live(match_id, match_state, match_info):
     live = LiveMatch(
         match_id=match_id,
         state=match_state,
-        brains={},
+        executor=BehaviorExecutor(match_state, {}),
         info=match_info,
         match_start=datetime.now(timezone.utc),
     )
