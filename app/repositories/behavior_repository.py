@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.behavior import BehaviorDB
 from app.db.league import LeagueEnrollmentPlayerDB, LeagueEnrollmentDB, LeagueDB
-
+from app.db.friendly import FriendlyDB, FriendlyPlayerDB
 
 class DuplicateNameBehavior(Exception):
     """El nombre del comportamiento no esta disponible"""
@@ -111,4 +111,16 @@ class BehaviorRepository:
             )
             .limit(1)
         )
-        return (await self._session.scalar(query)) is not None
+        if (await self._session.scalar(query)) is not None:
+            return True
+
+        in_friendly = (
+            select(FriendlyPlayerDB.id)
+            .join(FriendlyDB, FriendlyDB.id == FriendlyPlayerDB.friendly_id)
+            .where(
+                FriendlyPlayerDB.behavior_id == behavior_id,
+                FriendlyDB.status == "waiting_for_rival",
+            )
+            .limit(1)
+        )
+        return (await self._session.scalar(in_friendly)) is not None
