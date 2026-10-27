@@ -267,11 +267,13 @@ async def leave_league(
 async def start_league(
     league_id: UUID = Path(..., description=""),
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
 ) -> LeagueDetail:
     """Solo el creador puede iniciarla. Cambia el estado a started y genera el fixture."""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().start_league(league_id)
+    return await BaseLeaguesApi.subclasses[0](session).start_league(league_id, club)
 
 
 @router.get(

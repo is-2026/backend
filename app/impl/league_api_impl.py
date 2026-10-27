@@ -14,6 +14,7 @@ from app.repositories.league_repository import (
     SquadPlayerData,
     ClubAlreadyEnrolled,
     ClubNotEnrolled,
+    LeagueStartFailure,
 )
 from app.repositories.player_repository import PlayerRepository
 from app.db.behavior import BehaviorDB
@@ -263,3 +264,65 @@ class LeaguesApiImpl(BaseLeaguesApi):
 
         await league_lobby_connection.broadcast(league_id, event_club_left)
         return
+
+    async def start_league(
+        self,
+        league_id: uuid.UUID,
+        club: ClubDB,  # usamos la misma convencion de recibir ClubDB entero
+    ) -> LeagueDetail:
+
+        repo = LeagueRepository(self._session)
+
+        # vrificar si la liga existe (404)
+        league = await repo.get(league_id)
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga indicada no existe")
+
+        # verificar que el club que llama sea el creador (403)
+        if league.creator_club_id != club.id:
+            raise HTTPException(
+                status_code=403, detail="Solo el creador de la liga puede iniciarla"
+            )
+
+        # verificar que la liga no este ya iniciada/terminada/cancelada (409)
+        if league.status != "not_started":
+            raise HTTPException(
+                status_code=409, detail="La liga ya se encuentra iniciada o finalizada"
+            )
+
+        # verificar cantidad minima de clubes (400)
+        enrolled_clubs = await repo.list_clubs_of_league(league_id)
+        if len(enrolled_clubs) < MIN_CLUBS:
+            raise HTTPException(
+                status_code=400,
+                detail="No hay suficientes clubes inscriptos para iniciar la liga",
+            )
+
+        # llamar a la logica para iniciar liga
+        try:
+            await repo.start_league(league_id)
+        except LeagueStartFailure:
+            raise HTTPException(
+                status_code=500, detail="Error inesperado al iniciar la liga"
+            )  # internal server error <-- REVISAR
+
+        # emitir evento ws LeagueStarted
+        event_payload = {
+            "type": "LeagueStarted",
+            "payload": {"league_id": str(league_id)},
+        }
+        await league_lobby_connection.broadcast(league_id, event_payload)
+
+        # devolvemos el detalle de la liga actualizada
+        registered = [
+            {"club_id": str(c.id), "club_name": c.club_name} for c in enrolled_clubs
+        ]
+
+        return LeagueDetail(
+            id=league.id,
+            name=league.name,
+            is_private=league.hashed_password is not None,
+            max_clubs=league.max_clubs,
+            status="started",  # ya sabemos que arranco
+            registered_clubs=registered,
+        )
