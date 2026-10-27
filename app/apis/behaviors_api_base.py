@@ -50,5 +50,6 @@ class BaseBehaviorsApi:
     async def delete_behavior(
         self,
         behavior_id: UUID,
+        club_id : UUID
     ) -> None:
         ...
