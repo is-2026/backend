@@ -3,10 +3,12 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, or_, select
 
 from app.db.behavior import BehaviorDB
 from app.db.league import LeagueEnrollmentPlayerDB, LeagueEnrollmentDB, LeagueDB
 from app.db.friendly import FriendlyDB, FriendlyPlayerDB
+from app.db.match import MatchDB, MatchStatus
 
 
 class DuplicateNameBehavior(Exception):
@@ -90,9 +92,16 @@ class BehaviorRepository:
         in_friendly = (
             select(FriendlyPlayerDB.id)
             .join(FriendlyDB, FriendlyDB.id == FriendlyPlayerDB.friendly_id)
+            .outerjoin(MatchDB, MatchDB.id == FriendlyDB.match_id)
             .where(
                 FriendlyPlayerDB.behavior_id == behavior_id,
-                FriendlyDB.status == "waiting_for_rival",
+                or_(
+                    FriendlyDB.status == "waiting_for_rival",
+                    and_(
+                        FriendlyDB.status == "accepted",
+                        MatchDB.status != MatchStatus.finished,
+                    ),
+                ),
             )
             .limit(1)
         )
