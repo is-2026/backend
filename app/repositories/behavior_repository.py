@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.behavior import BehaviorDB
 from app.db.league import LeagueEnrollmentPlayerDB, LeagueEnrollmentDB, LeagueDB
+from app.db.friendly import FriendlyDB, FriendlyPlayerDB
 
 
 class DuplicateNameBehavior(Exception):
@@ -69,17 +70,30 @@ class BehaviorRepository:
         await self._session.refresh(behavior_updt)
         return behavior_updt
 
-    async def is_assigned(self, 
-                          behavior_id: uuid.UUID
-                          ) -> bool:
+    async def is_assigned(self, behavior_id: uuid.UUID) -> bool:
         query = (
             select(LeagueEnrollmentPlayerDB.id)
-            .join(LeagueEnrollmentDB, LeagueEnrollmentDB.id == LeagueEnrollmentPlayerDB.enrollment_id)
+            .join(
+                LeagueEnrollmentDB,
+                LeagueEnrollmentDB.id == LeagueEnrollmentPlayerDB.enrollment_id,
+            )
             .join(LeagueDB, LeagueDB.id == LeagueEnrollmentDB.league_id)
             .where(
-                LeagueEnrollmentPlayerDB.behavior_id == behavior_id ,
-                LeagueDB.status == "started"
+                LeagueEnrollmentPlayerDB.behavior_id == behavior_id,
+                LeagueDB.status.in_(["not_started", "started"]),
             )
             .limit(1)
         )
-        return (await self._session.scalar(query)) is not None
+        if (await self._session.scalar(query)) is not None:
+            return True
+
+        in_friendly = (
+            select(FriendlyPlayerDB.id)
+            .join(FriendlyDB, FriendlyDB.id == FriendlyPlayerDB.friendly_id)
+            .where(
+                FriendlyPlayerDB.behavior_id == behavior_id,
+                FriendlyDB.status == "waiting_for_rival",
+            )
+            .limit(1)
+        )
+        return (await self._session.scalar(in_friendly)) is not None
