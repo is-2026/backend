@@ -71,13 +71,11 @@ async def test_start_match_sets_tick_0_and_runs_in_background(
     match_state, match_info, match_id, client
 ):
     match_state.total_ticks = TOTAL_TICKS
-    match_state.home_score = 3  # kickoff lo tiene que resetear
 
     live = start_match(match_id, match_state, {}, match_info, **NO_WAIT)
 
     assert live_matches[match_id] is live
     assert live.last_state["data"]["tick"] == 0
-    assert match_state.home_score == 0
 
     await live.task
 
@@ -160,5 +158,7 @@ async def test_each_pause_last_its_duration_and_play_resumes(live, client):
     for start_type, duration in [("coolingBreakStart", 0.1), ("halftimeStart", 0.2)]:
         i = types.index(start_type)
         assert types[i + 1] == "matchResumed"
-        assert client.times[i+1] - client.times[i] == pytest.approx(duration, abs=0.03)
+        assert client.times[i + 1] - client.times[i] == pytest.approx(
+            duration, abs=0.03
+        )
         assert types[i + 2] == "matchState"

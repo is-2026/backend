@@ -98,6 +98,8 @@ async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
 
     await asyncio.sleep(seconds)
 
+    if pause == Pause.HALFTIME:
+        kickoff(live.state)
     live.current_pause = None
     resumed = match_resumed_message(match_id, live.state, pause)
     await match_connections.broadcast(live.match_id, resumed.model_dump(mode="json"))
