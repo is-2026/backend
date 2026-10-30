@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
@@ -10,6 +11,10 @@ from app.repositories.behavior_repository import (
     BehaviorRepository,
     DuplicateNameBehavior,
 )
+from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
+from app.db.player import PlayerDB
+from app.db.friendly import FriendlyDB, FriendlyPlayerDB
+from app.db.match import MatchDB
 
 
 # -- TESTS list_by_club --
@@ -466,4 +471,41 @@ async def test_update_duplicate_name(session):
             behavior_b_db.id, club_db.id, "Correr", "def decide_action():\n x=912"
         )
 
-    
+async def test_delete_succes(session):
+    user_id = uuid.uuid4()
+    user_db = UserDB(
+        id=user_id, email="test@example.com", hashed_password="password123"
+    )
+    session.add(user_db)
+    await session.commit()
+
+    # 2. Creo el Club
+    club_id = uuid.uuid4()
+    club_db = ClubDB(
+        id=club_id,
+        club_name="Club de Prueba",
+        avatar_url="https://example.com/avatar.png",
+        user_id=user_id,
+    )
+    session.add(club_db)
+    await session.flush()
+
+    behavior_id = uuid.uuid4()
+    behavior_db = BehaviorDB(
+        id = behavior_id,
+        name = "Correr",
+        code = "def decide_action():\n pass",
+        club_id = club_id,
+        kind= "player"
+    )
+    session.add(behavior_db)
+    await session.commit()
+
+    consult_repo = BehaviorRepository(session)
+    await consult_repo.delete(behavior_db)
+
+    result = await session.scalar( ##Hago la consulta a ver si realmente delete lo hace
+        select(BehaviorDB).where(BehaviorDB.id == behavior_id)
+    )
+
+    assert result is None
