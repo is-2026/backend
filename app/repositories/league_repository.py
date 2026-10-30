@@ -5,15 +5,23 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
+from app.db.match import MatchDB, MatchStatus
+from app.db.standings import LeagueStandingsDB
 from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
+
+from app.fixture.generator import generate_fixture
 
 
 class ClubAlreadyEnrolled(Exception):
     """El club ya está inscripto en esta liga"""
 
+
 class ClubNotEnrolled(Exception):
     """El club no está inscripto en esta liga"""
+
+class LeagueStartFailure(Exception):
+    """Fallo al inicializar la liga"""
 
 @dataclass
 class SquadPlayerData:
@@ -132,10 +140,9 @@ class LeagueRepository:
     async def remove_enrollment(self, league_id: uuid.UUID, club_id: uuid.UUID) -> None:
         # buscamos la inscripcion
         result = await self._session.execute(
-            select(LeagueEnrollmentDB)
-            .where(
+            select(LeagueEnrollmentDB).where(
                 LeagueEnrollmentDB.league_id == league_id,
-                LeagueEnrollmentDB.club_id == club_id
+                LeagueEnrollmentDB.club_id == club_id,
             )
         )
         enrollment = result.scalars().first()
@@ -146,11 +153,80 @@ class LeagueRepository:
 
         # borramos primero los jugadores asociados a esta inscripcion (por la FK)
         await self._session.execute(
-            delete(LeagueEnrollmentPlayerDB)
-            .where(
+            delete(LeagueEnrollmentPlayerDB).where(
                 LeagueEnrollmentPlayerDB.enrollment_id == enrollment.id
             )
         )
         # borramos la inscripcion y confirmamos
         await self._session.delete(enrollment)
+        await self._session.commit()
+
+    async def start_league(self, league_id: uuid.UUID) -> None:
+        """
+        Inicia la liga: cambia el estado, genera el fixture (partidos)
+        y crea la tabla de posiciones en cero.
+        Asume que las validaciones previas (cantidad de equipos, estado)
+        ya se hicieron en la capa superior.
+        """
+        # obtenemos la liga y cambiamos su estado
+        league = await self.get(league_id)
+        if not league:
+            raise ValueError(f"No se encontró la liga {league_id}")
+
+        league.status = "started"
+
+        # obtener los clubes inscriptos para generar fixture y tabla
+        clubs = await self.list_clubs_of_league(league_id)
+        club_ids = [club.id for club in clubs]  # esta va a ser la entrada del generador de fixture
+
+        # generar la tabla de posiciones inicial (en cero)
+        # como todos estan en cero, ordenamos por el ultimo criterio de desempate: orden alfabetico
+        clubs_ordenados = sorted(clubs, key=lambda c: c.club_name.lower())
+
+        standings_entries = []
+        for rank, club in enumerate(clubs_ordenados, start=1):
+            standings_entries.append(
+                LeagueStandingsDB(
+                    league_id=league_id,
+                    club_id=club.id,
+                    rank=rank,
+                    # el resto (las estadisticas) inicializan en cero por defecto
+                )
+            )
+
+        self._session.add_all(standings_entries)
+
+        # generamos el fixture
+        fechas = generate_fixture(club_ids)
+
+        # persistir los partidos (MatchDB)
+        match_entries = []
+
+        # - MAPEO: iteramos sobre lo que nos devolvio el generador (list[list[tuple[UUID, UUID]]])
+        #   y lo traducimos a instancias MatchDB
+        # - enumerate nos sirve para saber que numero de fecha es (1, 2, 3...)
+        for num_fecha, partidos_de_la_fecha in enumerate(fechas, start=1):
+            for local_id, visitante_id in partidos_de_la_fecha:
+                match_entries.append(
+                    MatchDB(
+                        id=uuid.uuid4(),
+                        home_club_id=local_id,
+                        away_club_id=visitante_id,
+                        status=MatchStatus.scheduled,
+                        league_id=league_id,
+                        round_number=num_fecha,
+                        home_score=None,
+                        away_score=None,
+                    )
+                )
+        self._session.add_all(match_entries)
+
+        # commit final: todo se guarda en una sola transaccion atomica, evitano ligas a medio hacer
+        # seria raro que falle en este nivel, pero lo manejamos aca
+        try:
+            await self._session.commit()
+        except Exception as e:
+            await self._session.rollback()
+            raise LeagueStartFailure from e
+
         await self._session.commit()

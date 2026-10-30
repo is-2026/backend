@@ -79,6 +79,7 @@ class BaseLeaguesApi:
     async def start_league(
         self,
         league_id: UUID,
+        club_id: UUID,
     ) -> LeagueDetail:
         """Solo el creador puede iniciarla. Cambia el estado a started y genera el fixture."""
         ...

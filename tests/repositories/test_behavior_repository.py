@@ -327,11 +327,11 @@ async def test_update_succes(session):
 
     behavior_id = uuid.uuid4()
     behavior_db = BehaviorDB(
-        id = behavior_id,
-        name = "Correr",
-        code = "def decide_action():\n pass",
-        club_id = club_id,
-        kind= "player"
+        id=behavior_id,
+        name="Correr",
+        code="def decide_action():\n pass",
+        club_id=club_id,
+        kind="player",
     )
     session.add(behavior_db)
     await session.commit()
@@ -344,6 +344,7 @@ async def test_update_succes(session):
     assert result.id == behavior_db.id
     assert result.name == "Pepito"
     assert result.code == "def decide_action():\n x=912"
+
 
 async def test_update_none(session):
     user_id = uuid.uuid4()
@@ -371,6 +372,7 @@ async def test_update_none(session):
         behavior_id, club_db.id, "Pepito", "def decide_action():\n x=912"
     )
     assert result == None
+
 
 async def test_update_other_club(session):
     user_a_id = uuid.uuid4()
@@ -409,11 +411,11 @@ async def test_update_other_club(session):
 
     behavior_id = uuid.uuid4()
     behavior_db = BehaviorDB(
-        id = behavior_id,
-        name = "Correr",
-        code = "def decide_action():\n pass",
-        club_id = club_a_id,
-        kind= "player"
+        id=behavior_id,
+        name="Correr",
+        code="def decide_action():\n pass",
+        club_id=club_a_id,
+        kind="player",
     )
     session.add(behavior_db)
     await session.commit()
@@ -425,6 +427,7 @@ async def test_update_other_club(session):
 
     assert result == None
 
+
 async def test_update_duplicate_name(session):
     user_a_id = uuid.uuid4()
     user_a_db = UserDB(
@@ -432,8 +435,8 @@ async def test_update_duplicate_name(session):
     )
     session.add(user_a_db)
     await session.flush()
-    
-    # club 
+
+    # club
     club_id = uuid.uuid4()
     club_db = ClubDB(
         id=club_id,
@@ -446,21 +449,21 @@ async def test_update_duplicate_name(session):
 
     behavior_a_id = uuid.uuid4()
     behavior_a_db = BehaviorDB(
-        id = behavior_a_id,
-        name = "Correr",
-        code = "def decide_action():\n pass",
-        club_id = club_db.id,
-        kind= "player"
+        id=behavior_a_id,
+        name="Correr",
+        code="def decide_action():\n pass",
+        club_id=club_db.id,
+        kind="player",
     )
     session.add(behavior_a_db)
-    
+
     behavior_b_id = uuid.uuid4()
     behavior_b_db = BehaviorDB(
-        id = behavior_b_id,
-        name = "Dar Pase",
-        code = "def decide_action():\n pass",
-        club_id = club_db.id,
-        kind= "player"
+        id=behavior_b_id,
+        name="Dar Pase",
+        code="def decide_action():\n pass",
+        club_id=club_db.id,
+        kind="player",
     )
     session.add(behavior_b_db)
     await session.commit()
@@ -509,3 +512,194 @@ async def test_delete_succes(session):
     )
 
     assert result is None
+
+@pytest.mark.parametrize(
+    "status, expected",
+    [
+        ("not_started", True),
+        ("started", True),
+        ("finished", False),
+        ("cancelled", False),
+    ],
+)
+async def test_is_assigned_league_status(session, status, expected):
+    user_id = uuid.uuid4()
+    session.add(
+        UserDB(id=user_id, email="moriste_en_madrid_912@example.com", hashed_password="09122018")
+    )
+    await session.commit()
+
+    club_id = uuid.uuid4()
+    session.add(
+        ClubDB(
+            id=club_id,
+            club_name="River Plate",
+            avatar_url="https://example.com/avatar.png",
+            user_id=user_id,
+        )
+    )
+    await session.commit()
+
+    league_id = uuid.uuid4()
+    session.add(
+        LeagueDB(
+            id=league_id,
+            name="LPF",
+            hashed_password=None,
+            max_clubs=3,
+            match_duration_minutes=5,
+            status=status,
+            creator_club_id=club_id,
+        )
+    )
+    await session.commit()
+
+    behavior_id = uuid.uuid4()
+    session.add(
+        BehaviorDB(
+            id=behavior_id,
+            name="Atacante",
+            code="def decide_action():\n    pass",
+            club_id=club_id,
+            kind="player",
+        )
+    )
+    await session.commit()
+
+    player_id = uuid.uuid4()
+    session.add(
+        PlayerDB(  
+            id=player_id,
+            name="Cavegol",
+            number=10,
+            power=60,
+            agility=60,
+            control=60,
+            speed=60,
+            strength=60,
+            club_id=club_id,
+        )
+    )
+    await session.commit()
+
+    enrollment_id = uuid.uuid4()
+    session.add(
+        LeagueEnrollmentDB( 
+            id=enrollment_id,
+            league_id=league_id,
+            club_id=club_id,
+        )
+    )
+    await session.commit()
+
+    session.add(
+        LeagueEnrollmentPlayerDB(
+            id=uuid.uuid4(),
+            enrollment_id=enrollment_id,
+            player_id=player_id,
+            is_starter=True,
+            behavior_id=behavior_id,
+        )
+    )
+    await session.commit()
+
+    consult_repo = BehaviorRepository(session)
+    result = await consult_repo.is_assigned(behavior_id)
+    assert result is expected
+
+
+@pytest.mark.parametrize(
+    "friendly_status, match_status, expected",
+    [
+        ("waiting_for_rival", None, True),
+        ("accepted", "in_progress", True),
+        ("accepted", "finished", False),
+        ("cancelled", None, False),
+    ],
+)
+async def test_is_assigned_friendly_status(
+    session, friendly_status, match_status, expected
+):
+    user_id = uuid.uuid4()
+    session.add(
+        UserDB(id=user_id, email="moriste_en_madrid_912@example.com", hashed_password="09122018")
+    )
+    await session.commit()
+
+    club_id = uuid.uuid4()
+    session.add(
+        ClubDB(
+            id=club_id,
+            club_name="River Plate",
+            avatar_url="https://example.com/avatar.png",
+            user_id=user_id,
+        )
+    )
+    await session.commit()
+
+    behavior_id = uuid.uuid4()
+    session.add(
+        BehaviorDB(
+            id=behavior_id,
+            name="Atacante",
+            code="def decide_action():\n    pass",
+            club_id=club_id,
+            kind="player",
+        )
+    )
+    await session.commit()
+
+    player_id = uuid.uuid4()
+    session.add(
+        PlayerDB( 
+            id=player_id,
+            name="CaveGOL",
+            number=10,
+            power=60,
+            agility=60,
+            control=60,
+            speed=60,
+            strength=60,
+            club_id=club_id,
+        )
+    )
+    await session.commit()
+
+    match_id = None
+    if match_status is not None:
+        match_id = uuid.uuid4()
+        session.add(
+            MatchDB(
+                id=match_id,
+                home_club_id=club_id,
+                away_club_id=club_id,
+                status=match_status,
+            )
+        )
+        await session.commit()
+
+    friendly_id = uuid.uuid4()
+    session.add(
+        FriendlyDB(
+            id=friendly_id,
+            creator_club_id=club_id,
+            status=friendly_status,
+            match_id=match_id,
+        )
+    )
+    await session.commit()
+
+    session.add(
+        FriendlyPlayerDB(
+            id=uuid.uuid4(),
+            friendly_id=friendly_id,
+            club_id=club_id,
+            player_id=player_id,
+            is_starter=True,
+            behavior_id=behavior_id,
+        )
+    )
+    await session.commit()
+
+    result = await BehaviorRepository(session).is_assigned(behavior_id)
+    assert result is expected
