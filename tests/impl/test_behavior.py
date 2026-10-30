@@ -417,3 +417,63 @@ async def test_update_behavior_invalid_code(mocked_repo_class, mocked_validate):
     assert exc_info.value.status_code == 400
     mocked_validate.assert_called_once_with(data.code, "coach")
     mocked_repo.update.assert_not_called()  
+
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
+async def test_delete_behavior_succes(mocked_repo_class):
+    club_id = uuid.uuid4()
+    behavior_id = uuid.uuid4()
+    behavior_db = BehaviorDB(
+        id=behavior_id,
+        name="Gambetear",
+        code="def decide_action():\n    pass",
+        club_id=club_id,
+        kind="player",
+    )
+    mocked_repo = MagicMock()
+    mocked_repo.get_id_and_club = AsyncMock(return_value=behavior_id)
+    mocked_repo.is_assigned = AsyncMock(return_value = False)
+    mocked_repo.delete = AsyncMock()
+    mocked_repo_class.return_value = mocked_repo
+
+    result = await BehaviorApiImpl(MagicMock()).delete_behavior(behavior_db, club_id)
+
+    assert result is None
+
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
+async def test_delete_behavior_is_assigned(mocked_repo_class):
+    club_id = uuid.uuid4()
+    behavior_id = uuid.uuid4()
+    behavior_db = BehaviorDB(
+        id=behavior_id,
+        name="Gambetear",
+        code="def decide_action():\n    pass",
+        club_id=club_id,
+        kind="player",
+    )
+    mocked_repo = MagicMock()
+    mocked_repo.get_id_and_club = AsyncMock(return_value=behavior_id)
+    mocked_repo.is_assigned = AsyncMock(return_value = True)
+    mocked_repo.delete = AsyncMock()
+    mocked_repo_class.return_value = mocked_repo
+    with pytest.raises(HTTPException) as exc_info:
+        await BehaviorApiImpl(MagicMock()).delete_behavior(behavior_db, club_id)
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "El comportamiento esta siendo utilizado en una alineación, debes reemplazarlo para poder eliminarlo"
+    mocked_repo.delete.assert_not_called() 
+
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
+async def test_delete_behavior_not_exist(mocked_repo_class):
+    club_id = uuid.uuid4()
+    behavior_db = BehaviorDB()
+    mocked_repo = MagicMock()
+    mocked_repo.get_id_and_club = AsyncMock(return_value=None)
+    mocked_repo.is_assigned = AsyncMock(return_value = False)
+    mocked_repo.delete = AsyncMock()
+    mocked_repo_class.return_value = mocked_repo
+    with pytest.raises(HTTPException) as exc_info:
+        await BehaviorApiImpl(MagicMock()).delete_behavior(behavior_db, club_id)
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "El comportamiento no existe"
+    mocked_repo.delete.assert_not_called()
