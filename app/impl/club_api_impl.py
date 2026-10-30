@@ -43,11 +43,13 @@ def _validate_avatar_url(raw_url: str) -> str:
 
 
 class ClubApiImpl(BaseClubApi):
-    def __init__(self, session: AsyncSession, user_id: uuid.UUID) -> None:
+    def __init__(self, session: AsyncSession, user_id: uuid.UUID | None = None) -> None:
         self._session = session
         self._user_id = user_id
 
     async def create_club(self, create_club_input: CreateClubInput) -> Club:
+        if self._user_id is None:
+            raise RuntimeError("create_club requiere user_id") #lanzo una excepcion
         club_name = _validate_club_name(create_club_input.club_name)
         avatar_url = _validate_avatar_url(create_club_input.avatar_url)
         try:
