@@ -208,6 +208,32 @@ paths:
                 $ref: '#/components/schemas/Club'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /club/coach:
+    patch:
+      tags: [Club]
+      summary: Activar o quitar DT del club
+      operationId: change_coach
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeCoachInput'
+      responses:
+        '200':
+          description: DT actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Club'
+        '400':
+          description: El comportamiento no existe, es de otro club o no es de tipo DT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   
   /club/history:
     get:
@@ -1273,6 +1299,9 @@ components:
         created_at:
           type: string
           format: date-time
+        coach_behavior_id:
+          type: [string,"null"]
+          format: uuid
 
     # --- Jugadores ---
     CreatePlayerInput:
@@ -1627,3 +1656,13 @@ components:
           type: string
         points:
           type: integer
+
+    # --- DT ---
+    ChangeCoachInput:
+      type: object
+      required: [behavior_id]
+      properties:
+        behavior_id:
+          type: [string, "null"]
+          format: uuid
+          description: Id del comportamiento de tipo DT, o null para quitar el DT activo
