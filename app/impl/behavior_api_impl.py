@@ -128,7 +128,7 @@ class BehaviorApiImpl(BaseBehaviorsApi):
         if behavior is None:
             raise HTTPException(status_code=404, detail="El comportamiento no existe")
 
-        if await repo.is_in_lineup(behavior_id):
+        if await repo.is_assigned(behavior_id):
             raise HTTPException(status_code = 409, detail= "El comportamiento esta siendo utilizado en una alineación, debes reemplazarlo para poder eliminarlo")
 
         try:

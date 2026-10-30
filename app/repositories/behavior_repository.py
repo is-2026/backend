@@ -1,18 +1,22 @@
 import uuid
 
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, or_, select
 
 from app.db.behavior import BehaviorDB
 from app.db.league import LeagueEnrollmentPlayerDB, LeagueEnrollmentDB, LeagueDB
 from app.db.friendly import FriendlyDB, FriendlyPlayerDB
+from app.db.match import MatchDB, MatchStatus
+
 
 class DuplicateNameBehavior(Exception):
     """El nombre del comportamiento no esta disponible"""
 
+
 class BehaviorInUse(Exception):
     """El comportamiento esta siendo utilizado en este momento"""
+
 
 class BehaviorRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -79,25 +83,8 @@ class BehaviorRepository:
         except IntegrityError as info_exc:
             await self._session.rollback()
             raise BehaviorInUse() from info_exc
-        
 
     async def is_assigned(self, behavior_id: uuid.UUID) -> bool:
-        query = (
-            select(LeagueEnrollmentPlayerDB.id)
-            .join(
-                LeagueEnrollmentDB,
-                LeagueEnrollmentDB.id == LeagueEnrollmentPlayerDB.enrollment_id,
-            )
-            .join(LeagueDB, LeagueDB.id == LeagueEnrollmentDB.league_id)
-            .where(
-                LeagueEnrollmentPlayerDB.behavior_id == behavior_id,
-                LeagueDB.status == "started",
-            )
-            .limit(1)
-        )
-        return (await self._session.scalar(query)) is not None
-
-    async def is_in_lineup(self, behavior_id: uuid.UUID) -> bool:
         query = (
             select(LeagueEnrollmentPlayerDB.id)
             .join(
@@ -117,9 +104,16 @@ class BehaviorRepository:
         in_friendly = (
             select(FriendlyPlayerDB.id)
             .join(FriendlyDB, FriendlyDB.id == FriendlyPlayerDB.friendly_id)
+            .outerjoin(MatchDB, MatchDB.id == FriendlyDB.match_id)
             .where(
                 FriendlyPlayerDB.behavior_id == behavior_id,
-                FriendlyDB.status == "waiting_for_rival",
+                or_(
+                    FriendlyDB.status == "waiting_for_rival",
+                    and_(
+                        FriendlyDB.status == "accepted",
+                        MatchDB.status != MatchStatus.finished,
+                    ),
+                ),
             )
             .limit(1)
         )
