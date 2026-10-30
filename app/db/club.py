@@ -26,11 +26,18 @@ class ClubDB(Base):
     # RELATIONSHIPS --
     # 1 club juega muchos partidos de local
     home_matches: Mapped[list["MatchDB"]] = relationship(
-        foreign_keys="[MatchDB.home_club_id]",
-        back_populates="home_club"
+        foreign_keys="[MatchDB.home_club_id]", back_populates="home_club"
     )
     # 1 club juega muchos partidos de visitante
     away_matches: Mapped[list["MatchDB"]] = relationship(
-        foreign_keys="[MatchDB.away_club_id]",
-        back_populates="away_club"
+        foreign_keys="[MatchDB.away_club_id]", back_populates="away_club"
+    )
+    coach_behavior_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "behaviors.id",
+            ondelete="SET NULL",
+            name="fk_clubs_coach_behavior_id",
+            use_alter=True,
+        ),
+        nullable=True,
     )
