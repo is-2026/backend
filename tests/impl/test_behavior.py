@@ -8,7 +8,7 @@ from app.db.behavior import BehaviorDB
 from app.engine.behavior_exec import InvalidBehaviorCode
 from app.engine.validation import validate_behavior_code
 from app.impl.behavior_api_impl import BehaviorApiImpl
-from app.models.create_behavior_input import CreateBehaviorInput
+from app.models.create_behavior_input import CreateBehaviorInput, UpdateBehaviorInput
 from app.repositories.behavior_repository import DuplicateNameBehavior
 
 
@@ -270,3 +270,150 @@ async def test_create_behavior_coach(mocked_repo_class, mocked_validate):
         "def decide_coach():\n    pass",
         "coach",
     )
+
+@patch("app.impl.behavior_api_impl.validate_behavior_code")
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
+async def test_update_behavior_succes(mocked_repo_class, mocked_validate):
+    club_id = uuid.uuid4()
+    behavior_id = uuid.uuid4()
+    behavior_db = BehaviorDB(
+        id=behavior_id,
+        name="CorrerCorrerCorrerCorrerCorrer",
+        code="def decide_coach():\n    pass",
+        club_id=club_id,
+        kind="coach",
+    )
+    mocked_repo = MagicMock()
+    mocked_repo.get_id_and_club = AsyncMock(return_value=behavior_db)
+    mocked_repo.is_assigned = AsyncMock(return_value=False)
+    
+    async def fake_update(behavior_id, club_id, name, code):
+        behavior_db.name = name
+        behavior_db.code = code
+        return behavior_db
+
+    mocked_repo.update = AsyncMock(side_effect=fake_update) #reemplazo el update por el fake_update
+    mocked_repo_class.return_value = mocked_repo
+
+    data = UpdateBehaviorInput(name="Gallardo", code="def decide_coach():\n    x = 1")
+    result = await BehaviorApiImpl(MagicMock()).update_behavior(behavior_id, data, club_id)
+
+    assert result.name == "Gallardo"
+    assert result.code == "def decide_coach():\n    x = 1"
+    assert result.kind == "coach"
+    assert result.id == behavior_id
+
+    mocked_validate.assert_called_once_with(data.code, "coach")
+    mocked_repo.update.assert_awaited_once_with(
+        behavior_id, club_id, "Gallardo", data.code
+    )
+
+@patch("app.impl.behavior_api_impl.validate_behavior_code")
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
+async def test_update_not_behavior(mocked_repo_class, mocked_validate):
+    club_id = uuid.uuid4()
+    behavior_id = uuid.uuid4()
+    behavior_db = None
+    mocked_repo = MagicMock()
+    mocked_repo.get_id_and_club = AsyncMock(return_value=behavior_db)
+    mocked_repo.is_assigned = AsyncMock(return_value=False)
+
+    async def fake_update(behavior_id, club_id, name, code):
+            behavior_db.name = name
+            behavior_db.code = code
+            return behavior_db
+
+    mocked_repo.update = AsyncMock(side_effect=fake_update) #reemplazo el update por el fake_update
+    mocked_repo_class.return_value = mocked_repo
+
+    data = UpdateBehaviorInput(name="Gallardo", code="def decide_coach():\n    x = 1")
+    with pytest.raises(HTTPException) as exc_info:
+        await BehaviorApiImpl(MagicMock()).update_behavior(behavior_id, data, club_id)
+
+    assert exc_info.value.status_code == 404
+    mocked_repo.update.assert_not_called()
+
+
+@patch("app.impl.behavior_api_impl.validate_behavior_code")
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
+async def test_update_behavior_invalid_name(mocked_repo_class, mocked_validate):
+    club_id = uuid.uuid4()
+    behavior_id = uuid.uuid4()
+    behavior_db = BehaviorDB(
+        id=behavior_id,
+        name="CorrerCorrerCorrerCorrerCorrer",
+        code="def decide_coach():\n    pass",
+        club_id=club_id,
+        kind="coach",
+    )
+    mocked_repo = MagicMock()
+    mocked_repo.get_id_and_club = AsyncMock(return_value=behavior_db)
+    mocked_repo.is_assigned = AsyncMock(return_value=False)
+    
+    async def fake_update(behavior_id, club_id, name, code):
+        behavior_db.name = name
+        behavior_db.code = code
+        return behavior_db
+
+    mocked_repo.update = AsyncMock(side_effect=fake_update) #reemplazo el update por el fake_update
+    mocked_repo_class.return_value = mocked_repo
+
+    data = UpdateBehaviorInput(name="GallardoGallardoGallardoGallardo", code="def decide_coach():\n    x = 1")
+    with pytest.raises(HTTPException) as exc_info:
+        await BehaviorApiImpl(MagicMock()).update_behavior(behavior_id, data, club_id)
+
+    assert exc_info.value.status_code == 400
+    mocked_repo.update.assert_not_called()
+
+@patch("app.impl.behavior_api_impl.validate_behavior_code")
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
+async def test_update_behavior_name_use(mocked_repo_class, mocked_validate):
+    club_id = uuid.uuid4()
+    behavior_id = uuid.uuid4
+    behavior_db = BehaviorDB(
+        id=behavior_id,
+        name="CorrerCorrerCorrerCorrerCorrer",
+        code="def decide_coach():\n    pass",
+        club_id=club_id,
+        kind="coach",
+    )
+    mocked_repo = MagicMock()
+    mocked_repo.get_id_and_club = AsyncMock(return_value=behavior_db)
+    mocked_repo.is_assigned = AsyncMock(return_value=False)
+    mocked_repo.update = AsyncMock(side_effect=DuplicateNameBehavior())
+    mocked_repo_class.return_value = mocked_repo
+
+    data = UpdateBehaviorInput(name="Gallardo", code="def decide_coach():\n    x = 1")
+    with pytest.raises(HTTPException) as exc_info:
+        await BehaviorApiImpl(MagicMock()).update_behavior(behavior_id, data, club_id)
+
+    assert exc_info.value.status_code == 409
+    mocked_repo.update.assert_awaited_once_with(behavior_id, club_id, "Gallardo", data.code)
+
+
+@patch("app.impl.behavior_api_impl.validate_behavior_code")
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
+async def test_update_behavior_invalid_code(mocked_repo_class, mocked_validate):
+    club_id = uuid.uuid4()
+    behavior_id = uuid.uuid4()
+    behavior_db = BehaviorDB(
+        id=behavior_id,
+        name="CorrerCorrerCorrerCorrerCorrer",
+        code="def decide_coach():\n    pass",
+        club_id=club_id,
+        kind="coach",
+    )
+    mocked_repo = MagicMock()
+    mocked_repo.get_id_and_club = AsyncMock(return_value=behavior_db)
+    mocked_repo.is_assigned = AsyncMock(return_value=False)
+    mocked_repo.update = AsyncMock()
+    mocked_repo_class.return_value = mocked_repo
+    mocked_validate.side_effect = InvalidBehaviorCode("Línea 3: no se permite import")
+
+    data = UpdateBehaviorInput(name="Gallardo", code="def:\n    x = 1")
+    with pytest.raises(HTTPException) as exc_info:
+        await BehaviorApiImpl(MagicMock()).update_behavior(behavior_id, data, club_id)
+
+    assert exc_info.value.status_code == 400
+    mocked_validate.assert_called_once_with(data.code, "coach")
+    mocked_repo.update.assert_not_called()  

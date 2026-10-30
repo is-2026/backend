@@ -70,3 +70,50 @@ class BehaviorApiImpl(BaseBehaviorsApi):
             code=new_behavior.code,
             kind=new_behavior.kind,
         )
+
+    async def update_behavior(
+        self, behavior_id: uuid.UUID, update_behavior_input, club_id: uuid.UUID
+    ) -> Behavior:
+        repo = BehaviorRepository(self._session)
+
+        behavior = await repo.get_id_and_club(
+            behavior_id, club_id
+        )  # traigo todo el comportamiento
+        if behavior is None:
+            raise HTTPException(status_code=404, detail="El comportamiento no existe")
+
+        if await repo.is_assigned(behavior_id):
+            raise HTTPException(
+                status_code=409, detail="El comportamiento esta asignado a un jugador"
+            )
+
+        name = (
+            update_behavior_input.name.strip()
+        )  # el strip quita los espacios y saltos de linea del name
+        if len(name) < 1 or len(name) > 30:
+            raise HTTPException(
+                status_code=400, detail="Los caracteres ingresados son invalidos"
+            )
+        try:
+            validate_behavior_code(update_behavior_input.code, behavior.kind)
+        except InvalidBehaviorCode as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+        try:
+            updt_behavior = await repo.update(
+                behavior_id, club_id, name, update_behavior_input.code
+            )
+        except DuplicateNameBehavior:
+            raise HTTPException(
+                status_code=409, detail="El nombre ingresado no esta disponible"
+            )
+        
+        if updt_behavior is None:
+            raise HTTPException(status_code=404, detail="El comportamiento no existe")
+
+        return Behavior(
+            id=updt_behavior.id,
+            name=updt_behavior.name,
+            code=updt_behavior.code,
+            kind=updt_behavior.kind,
+        )

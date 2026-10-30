@@ -3,8 +3,12 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, or_, select
 
 from app.db.behavior import BehaviorDB
+from app.db.league import LeagueEnrollmentPlayerDB, LeagueEnrollmentDB, LeagueDB
+from app.db.friendly import FriendlyDB, FriendlyPlayerDB
+from app.db.match import MatchDB, MatchStatus
 
 
 class DuplicateNameBehavior(Exception):
@@ -49,3 +53,56 @@ class BehaviorRepository:
 
         await self._session.refresh(behavior)
         return behavior
+
+    async def update(
+        self, behavior_id: uuid.UUID, club_id: uuid.UUID, name: str, code: str
+    ) -> BehaviorDB | None:
+        behavior_updt = await self.get_id_and_club(behavior_id, club_id)
+        if behavior_updt is None:
+            return None
+
+        behavior_updt.name = name
+        behavior_updt.code = code
+        try:
+            await self._session.commit()
+        except IntegrityError as info_exc:
+            await self._session.rollback()
+            raise DuplicateNameBehavior() from info_exc
+
+        await self._session.refresh(behavior_updt)
+        return behavior_updt
+
+    async def is_assigned(self, behavior_id: uuid.UUID) -> bool:
+        query = (
+            select(LeagueEnrollmentPlayerDB.id)
+            .join(
+                LeagueEnrollmentDB,
+                LeagueEnrollmentDB.id == LeagueEnrollmentPlayerDB.enrollment_id,
+            )
+            .join(LeagueDB, LeagueDB.id == LeagueEnrollmentDB.league_id)
+            .where(
+                LeagueEnrollmentPlayerDB.behavior_id == behavior_id,
+                LeagueDB.status.in_(["not_started", "started"]),
+            )
+            .limit(1)
+        )
+        if (await self._session.scalar(query)) is not None:
+            return True
+
+        in_friendly = (
+            select(FriendlyPlayerDB.id)
+            .join(FriendlyDB, FriendlyDB.id == FriendlyPlayerDB.friendly_id)
+            .outerjoin(MatchDB, MatchDB.id == FriendlyDB.match_id)
+            .where(
+                FriendlyPlayerDB.behavior_id == behavior_id,
+                or_(
+                    FriendlyDB.status == "waiting_for_rival",
+                    and_(
+                        FriendlyDB.status == "accepted",
+                        MatchDB.status != MatchStatus.finished,
+                    ),
+                ),
+            )
+            .limit(1)
+        )
+        return (await self._session.scalar(in_friendly)) is not None
