@@ -12,7 +12,11 @@ from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
 from app.db.player import PlayerDB
 from app.db.user import UserDB
-from app.repositories.league_repository import ClubAlreadyEnrolled, ClubNotEnrolled
+from app.repositories.league_repository import (
+    ClubAlreadyEnrolled,
+    ClubNotEnrolled,
+    LeagueStartFailure,
+)
 from app.impl import league_api_impl
 from app.impl.league_api_impl import LeaguesApiImpl
 from app.models.create_league_input import CreateLeagueInput
@@ -848,4 +852,137 @@ async def test_leave_league_not_enrolled(api, mocks):
     assert error.value.status_code == 404
     assert error.value.detail == "El club no está inscripto en esta liga"
     # verificamos que no se emitio ningun evento
+    mocks.lobby_connection.broadcast.assert_not_awaited()
+
+
+async def test_start_league_success(api, mocks):
+    # configuramos la liga
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        name="Liga Lista Para Empezar",
+        hashed_password=None,
+        max_clubs=5,
+        status="not_started",
+        creator_club_id=CLUB.id,  #el club que llama es el creador
+    )
+    mocks.league_repo.get.return_value = league
+
+    club2 = SimpleNamespace(id=uuid.uuid4(), club_name="Boca")
+    club3 = SimpleNamespace(id=uuid.uuid4(), club_name="Racing")
+    # simulamos que hay 3 clubes inscriptos (el minimo)
+    mocks.league_repo.list_clubs_of_league.return_value = [CLUB, club2, club3]
+
+    # simulamos que start_league no lanza errores
+    mocks.league_repo.start_league = AsyncMock()
+
+    # llamamos al endpoint
+    result = await api.start_league(league_id, CLUB)
+
+    # verificamos que se llamo al repositorio para iniciarla
+    mocks.league_repo.start_league.assert_awaited_once_with(league_id)
+
+    # verificamos que se emitio el evento ws LeagueStarted
+    expected_event = {
+        "type": "LeagueStarted",
+        "payload": {"league_id": str(league_id)},
+    }
+    mocks.lobby_connection.broadcast.assert_awaited_once_with(league_id, expected_event)
+
+    # verificamos que el LeagueDetail devuelto tenga el estado en "started"
+    assert result.status == "started"
+    assert result.id == league_id
+
+
+async def test_start_league_not_found(api, mocks):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = None
+
+    with pytest.raises(HTTPException) as error:
+        await api.start_league(league_id, CLUB)
+
+    assert error.value.status_code == 404
+    assert error.value.detail == "La liga indicada no existe"
+    mocks.league_repo.start_league.assert_not_awaited()
+
+
+async def test_start_league_not_creator(api, mocks):
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        status="not_started",
+        creator_club_id=uuid.uuid4(),  # un ID distinto al del club que hace la llamada
+    )
+    mocks.league_repo.get.return_value = league
+
+    with pytest.raises(HTTPException) as error:
+        await api.start_league(league_id, CLUB)
+
+    assert error.value.status_code == 403
+    assert error.value.detail == "Solo el creador de la liga puede iniciarla"
+    mocks.league_repo.start_league.assert_not_awaited()
+
+
+async def test_start_league_already_started(api, mocks):
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        status="started",  # ya esta iniciada
+        creator_club_id=CLUB.id,
+    )
+    mocks.league_repo.get.return_value = league
+
+    with pytest.raises(HTTPException) as error:
+        await api.start_league(league_id, CLUB)
+
+    assert error.value.status_code == 409
+    mocks.league_repo.start_league.assert_not_awaited()
+
+
+async def test_start_league_not_enough_clubs(api, mocks):
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id, status="not_started", creator_club_id=CLUB.id
+    )
+    mocks.league_repo.get.return_value = league
+
+    # solo hay 2 clubs inscriptos
+    mocks.league_repo.list_clubs_of_league.return_value = [CLUB, MagicMock()]
+
+    with pytest.raises(HTTPException) as error:
+        await api.start_league(league_id, CLUB)
+
+    assert error.value.status_code == 400
+    assert error.value.detail == "No hay suficientes clubes inscriptos para iniciar la liga"
+    mocks.league_repo.start_league.assert_not_awaited()
+
+
+async def test_start_league_repo_failure_returns_500(api, mocks):
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        name="Liga Test",
+        hashed_password=None,
+        max_clubs=5,
+        status="not_started",
+        creator_club_id=CLUB.id,
+    )
+    mocks.league_repo.get.return_value = league
+    mocks.league_repo.list_clubs_of_league.return_value = [
+        CLUB,
+        MagicMock(),
+        MagicMock(),
+    ]
+
+    # simulamos un fallo critico en la base de datos (por ej. un IntegrityError producido por una race condition)
+    # esto es el error no documentado (500) que atajamos en el repo
+    mocks.league_repo.start_league.side_effect = LeagueStartFailure()
+
+    with pytest.raises(HTTPException) as error:
+        await api.start_league(league_id, CLUB)
+
+    # verificamos que atajo nuestra excepcion y devolvio el error 500
+    assert error.value.status_code == 500
+
+    # verificamos que si falla la base de datos, NUNCA se emite el evento ws
     mocks.lobby_connection.broadcast.assert_not_awaited()

@@ -39,7 +39,8 @@ class Match(BaseModel):
     status: Optional[MatchStatus] = None
     home_score: Optional[StrictInt] = None
     away_score: Optional[StrictInt] = None
-    __properties: ClassVar[List[str]] = ["id", "home_club_id", "away_club_id", "status", "home_score", "away_score"]
+    round_number: Optional[StrictInt] = None
+    __properties: ClassVar[List[str]] = ["id", "home_club_id", "away_club_id", "status", "home_score", "away_score", "round_number"]
 
     model_config = {
         "populate_by_name": True,
@@ -105,7 +106,8 @@ class Match(BaseModel):
             "away_club_id": obj.get("away_club_id"),
             "status": obj.get("status"),
             "home_score": obj.get("home_score"),
-            "away_score": obj.get("away_score")
+            "away_score": obj.get("away_score"),
+            "round_number": obj.get("round_number")
         })
         return _obj
 

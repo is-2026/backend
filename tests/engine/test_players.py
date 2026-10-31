@@ -58,11 +58,11 @@ def test_borders(state, rng, initial_x, initial_y, dx, dy, expected_x, expected_
 def test_pct_speed(state, rng):
     player1, player2 = state.players[0], state.players[1]
     player1.x, player1.y = 0.0, 0.0
-    player2.x, player2.y = 0.0, 0.0
+    player2.x, player2.y = 10.0, 0.0
 
     step(state, {player1.id: Move(1, 1, 100), player2.id: Move(1, 1, 150)}, rng)
 
-    assert player1.x == pytest.approx(player2.x)
+    assert player1.x == pytest.approx(player2.x - 10)
     assert player1.y == pytest.approx(player2.y)
 
 

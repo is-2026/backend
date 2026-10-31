@@ -4,6 +4,8 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from app.db.match import MatchDB, MatchStatus
+from app.db.standings import LeagueStandingsDB
 from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
@@ -23,7 +25,8 @@ async def count(session, model) -> int:
 
 async def make_club(session) -> uuid.UUID:
     user_id = uuid.uuid4()
-    session.add(UserDB(id=user_id, email="liga@test.com", hashed_password="hash"))
+    random_email = f"liga_{str(user_id)[:8]}@test.com"  # generamos un email unico a partir de la id
+    session.add(UserDB(id=user_id, email=random_email, hashed_password="hash"))
     await session.flush()  # el usuario se inserta antes que el club
     club_id = uuid.uuid4()
     session.add(
@@ -318,3 +321,82 @@ async def test_remove_enrollment_not_enrolled(session):
     # ejecutamos el metodo (borrar inscripcion) y esperamos la excepcion ClubNotEnrolled
     with pytest.raises(ClubNotEnrolled):
         await repo.remove_enrollment(league_id, club_id)
+
+
+async def test_start_league_success(session, session_factory):
+    # creamos el club creador y la liga, y lo inscribimos
+    creator_club_id = await make_club(session)
+    league_id = await add_league(
+        session, creator_club_id, "Liga Test Start", "not_started"
+    )
+    repo = LeagueRepository(session)
+    squad_creator = await make_squad(session, creator_club_id)
+    await repo.add_enrollment(league_id, creator_club_id, squad_creator)
+
+    # creamos e inscribimos 3 clubes mas (N=4 total, par)
+    club_ids = [creator_club_id]
+    for _ in range(3):
+        other_club_id = await make_club(session)
+        squad_other = await make_squad(session, other_club_id)
+        await repo.add_enrollment(league_id, other_club_id, squad_other)
+        club_ids.append(other_club_id)
+
+    # INICIAMOS LA LIGA
+    await repo.start_league(league_id)
+
+    # verificamos en una sesion limpia que los datos estan persistidos
+    async with session_factory() as other:
+        # verificamos el estado de la liga
+        stored_league = await other.get(LeagueDB, league_id)
+        assert stored_league is not None
+        assert stored_league.status == "started"
+
+        # verificamos la tabla de posiciones (standings)
+        standings_result = await other.execute(
+            select(LeagueStandingsDB).where(LeagueStandingsDB.league_id == league_id)
+        )
+        standings = standings_result.scalars().all()
+
+        assert len(standings) == 4  # una fila por club inscripto
+
+        # comprobamos la inicializacion en cero y que los ranks sean del 1 al 4
+        rangos_usados = set()
+        for s in standings:
+            assert s.club_id in club_ids
+            assert s.points == 0
+            assert s.matches_played == 0
+            assert s.won == 0
+            assert s.drawn == 0
+            assert s.lost == 0
+            assert s.goals_for == 0
+            assert s.goals_against == 0
+            rangos_usados.add(s.rank)
+
+        assert rangos_usados == {1, 2, 3, 4}  # Los rangos deben ser únicos secuenciales
+
+        # verificamos el fixture (los partidos generados)
+        matches_result = await other.execute(
+            select(MatchDB).where(MatchDB.league_id == league_id)
+        )
+        matches = matches_result.scalars().all()
+
+        # N=4 equipos
+        # Fechas = 3. Partidos totales = (4*3)/2 = 6
+        assert len(matches) == 6
+
+        for m in matches:
+            assert m.status == MatchStatus.scheduled
+            assert m.home_score is None
+            assert m.away_score is None
+            assert m.home_club_id != m.away_club_id  # nadie juega contra si mismo
+            assert m.round_number in [1, 2, 3]  # todos los partidos deben tener un round_number valido
+
+        # verificamos integridad de las fechas
+        # en N=4, cada fecha debe tener exactamente 2 partidos
+        partidos_por_fecha = {1: 0, 2: 0, 3: 0}
+        for m in matches:
+            partidos_por_fecha[m.round_number] += 1
+
+        assert partidos_por_fecha[1] == 2
+        assert partidos_por_fecha[2] == 2
+        assert partidos_por_fecha[3] == 2
