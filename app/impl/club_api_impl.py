@@ -74,12 +74,11 @@ class ClubApiImpl(BaseClubApi):
     async def change_coach(
         self, change_coach_input: ChangeCoachInput, club_id: uuid.UUID
     ) -> Club:
-        club_repo = ClubRepository(self._session)
-        if change_coach_input.behavior_id is None:
-            club = await club_repo.update_coach(club_id, None)
-        else:
+        behavior_id = change_coach_input.behavior_id
+
+        if behavior_id is not None:
             behavior = await BehaviorRepository(self._session).get_id_and_club(
-                change_coach_input.behavior_id, club_id
+                behavior_id, club_id
             )
             if behavior is None:
                 raise HTTPException(
@@ -90,7 +89,7 @@ class ClubApiImpl(BaseClubApi):
                     status_code=400, detail="El comportamiento es de jugador"
                 )
 
-        club = await club_repo.update_coach(club_id, change_coach_input.behavior_id)
+        club = await ClubRepository(self._session).update_coach(club_id, behavior_id)
         if club is None:
             raise HTTPException(status_code=404, detail="El club no existe")
 
