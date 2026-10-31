@@ -2,7 +2,7 @@ import asyncio
 import logging
 import random
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
@@ -26,6 +26,7 @@ from app.ws.match.pauses import (
     Pause,
     pauses_schedule,
 )
+from app.ws.match.substitutions import PendingSubstitution
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,10 @@ class LiveMatch:
     last_state: dict | None = None
     # inicio de la pausa en curso ya serializado para el que se une justo en la pausa
     current_pause: dict | None = None
+    # team_id -> la sustitucion pedida por un club
+    pending_substitutions: dict[str, PendingSubstitution] = field(default_factory=dict)
+    # cuantas pausas empezaron
+    pauses_started: int = 0
     # referencia a la tarea, si nadie la guarda, se puede perder
     task: asyncio.Task | None = None
 
@@ -131,7 +136,6 @@ async def _tick(live: LiveMatch, rng: random.Random) -> None:
 
     live.last_state = _state_payload(live)
     await match_connections.broadcast(live.match_id, live.last_state)
-    
 
 
 async def _notify_finish(live: LiveMatch) -> None:
