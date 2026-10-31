@@ -10,6 +10,7 @@ from app.repositories.club_repository import (
     ClubAlreadyExists,
     ClubRepository,
 )
+from app.db.behavior import BehaviorDB
 
 CLUB_NAME = "Instituto"
 AVATAR_URL = "https://img.com/avatar.png"
@@ -94,3 +95,56 @@ async def test_get_by_id(session, user, default_behaviors):
 
 async def test_get_by_id_unknown_returns_none(session):
     assert await ClubRepository(session).get_by_id(uuid.uuid4()) is None
+
+async def test_update_coach_succes(session, user, default_behaviors):
+    club = await ClubRepository(session).create(
+        user.id, CLUB_NAME, AVATAR_URL, default_behaviors
+    )
+
+    behavior_id = uuid.uuid4()
+    behavior_dt = BehaviorDB(
+        id = behavior_id,
+            name = "Gagardo",
+            code = "def decide_coach():\n pass",
+            club_id = club.id,
+            kind= "coach"
+    )
+    session.add(behavior_dt)
+    await session.commit()
+    
+    result = await ClubRepository(session).update_coach(club.id, behavior_dt.id)
+
+    assert result is not None
+    assert result.id == club.id 
+    assert result.coach_behavior_id == behavior_dt.id
+
+async def test_update_coach_club_id_invalid(session, user, default_behaviors):
+    club = await ClubRepository(session).create(
+        user.id, CLUB_NAME, AVATAR_URL, default_behaviors
+    )
+
+    behavior_id = uuid.uuid4()
+    behavior_dt = BehaviorDB(
+        id = behavior_id,
+            name = "Gagardo",
+            code = "def decide_coach():\n pass",
+            club_id = club.id,
+            kind= "coach"
+    )
+    session.add(behavior_dt)
+    await session.commit()
+    
+    result = await ClubRepository(session).update_coach(uuid.uuid4(), behavior_dt.id)
+
+    assert result is None
+
+async def test_update_coach_not_behavior(session, user, default_behaviors):
+    club = await ClubRepository(session).create(
+        user.id, CLUB_NAME, AVATAR_URL, default_behaviors
+    )
+    await session.commit()
+    
+    result = await ClubRepository(session).update_coach(club.id, None)
+
+    assert result is not None
+    assert result.coach_behavior_id == None
