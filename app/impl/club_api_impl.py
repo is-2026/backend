@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.apis.club_api_base import BaseClubApi
 from app.behaviors.defaults import DEFAULT_BEHAVIORS
 from app.models.club import Club
+from app.models.change_coach_input import ChangeCoachInput
 from app.models.create_club_input import CreateClubInput
 from app.repositories.club_repository import ClubAlreadyExists, ClubRepository
+from app.repositories.behavior_repository import BehaviorRepository
 
 CLUB_NAME_MAX_LENGTH = 50
 AVATAR_URL_MAX_LENGTH = 512
@@ -49,7 +51,7 @@ class ClubApiImpl(BaseClubApi):
 
     async def create_club(self, create_club_input: CreateClubInput) -> Club:
         if self._user_id is None:
-            raise RuntimeError("create_club requiere user_id") #lanzo una excepcion
+            raise RuntimeError("create_club requiere user_id")  # lanzo una excepcion
         club_name = _validate_club_name(create_club_input.club_name)
         avatar_url = _validate_avatar_url(create_club_input.avatar_url)
         try:
@@ -67,4 +69,36 @@ class ClubApiImpl(BaseClubApi):
             avatar_url=club.avatar_url,
             user_id=club.user_id,
             created_at=club.created_at,
+        )
+
+    async def change_coach(
+        self, change_coach_input: ChangeCoachInput, club_id: uuid.UUID
+    ) -> Club:
+        club_repo = ClubRepository(self._session)
+        if change_coach_input.behavior_id is None:
+            club = await club_repo.update_coach(club_id, None)
+        else:
+            behavior = await BehaviorRepository(self._session).get_id_and_club(
+                change_coach_input.behavior_id, club_id
+            )
+            if behavior is None:
+                raise HTTPException(
+                    status_code=400, detail="El comportamiento no existe"
+                )
+            if behavior.kind != "coach":
+                raise HTTPException(
+                    status_code=400, detail="El comportamiento es de jugador"
+                )
+
+        club = await club_repo.update_coach(club_id, change_coach_input.behavior_id)
+        if club is None:
+            raise HTTPException(status_code=404, detail="El club no existe")
+
+        return Club(
+            id=club.id,
+            club_name=club.club_name,
+            avatar_url=club.avatar_url,
+            user_id=club.user_id,
+            created_at=club.created_at,
+            coach_behavior_id=club.coach_behavior_id,
         )
