@@ -1,5 +1,9 @@
+from textwrap import dedent
+
 import pytest
 
+from app.engine.actions import Move
+from app.engine.executor import BehaviorExecutor
 from app.engine.state import Side
 from app.ws.match.pauses import Pause
 from app.ws.match.substitutions import (
@@ -9,16 +13,34 @@ from app.ws.match.substitutions import (
     PendingSubstitution,
     SubstitutionConflict,
     cancel,
+    execute_substitution,
     get_side,
     schedule,
     substitution_window,
     validate_players,
 )
+from tests.engine.conftest import same_code_for_all
+
+GO_RIGHT = """
+    def decide_action():
+        move(1, 0, 100)
+"""
+
+GO_LEFT = """
+    def decide_action():
+        move(-1, 0, 100)
+"""
 
 
 def pending_sub(player_out_id="h1", player_in_id="h4") -> PendingSubstitution:
     return PendingSubstitution(
-        "s1", player_out_id, player_in_id, "b1", "bname", "bcode", Pause.HALFTIME
+        "s1",
+        player_out_id,
+        player_in_id,
+        "b1",
+        "bname",
+        dedent(GO_RIGHT),
+        Pause.HALFTIME,
     )
 
 
@@ -115,3 +137,37 @@ def test_cancel_without_pending():
 
     with pytest.raises(NoPendingSubstitution):
         cancel(pending, "club_local")
+
+
+@pytest.mark.parametrize(
+    "club, out_p, in_p, side, expected_move",
+    [
+        ("club-local", "h1", "h4", Side.HOME, Move(1.0, 0.0, 100.0)),
+        ("club-visitante", "a1", "a4", Side.AWAY, Move(-1.0, 0.0, 100.0)),
+    ],
+)
+async def test_execute_substitution(
+    match_state, match_info, club, out_p, in_p, side, expected_move
+):
+    lineup = match_info.home_lineup if side == Side.HOME else match_info.away_lineup
+    lineup[3].power = 80  # [3] es h4 o a4
+    lineup[3].speed = 40
+    ids_before = [p.id for p in match_state.players]
+    executor = BehaviorExecutor(
+        match_state, same_code_for_all(match_state, dedent(GO_LEFT))
+    )
+    sub = pending_sub(out_p, in_p)
+    execute_substitution(match_state, match_info, executor, club, sub)
+
+    assert [p.id for p in match_state.players] == [
+        in_p if pid == out_p else pid for pid in ids_before
+    ]
+    player = next(p for p in match_state.players if p.id == in_p)
+    assert player.side == side
+    assert player.power == 80
+    assert player.speed == 40
+
+    actions = await executor.decide(match_state)
+
+    assert actions[in_p] == expected_move
+    assert out_p not in actions
