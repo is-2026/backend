@@ -8,6 +8,7 @@ from app.engine.events import GoalEvent
 from app.engine.state import MatchState
 from app.ws.match.info import MatchInfo
 from app.ws.match.pauses import Pause
+from app.ws.match.substitutions import PendingSubstitution
 
 
 class Position(BaseModel):
@@ -117,6 +118,20 @@ class MatchResumedMessage(BaseModel):
     data: MatchResumedData
 
 
+class SubstitutionMadeData(BaseModel):
+    match_id: str
+    tick: int
+    player_in_id: str
+    player_out_id: str
+    behavior_id: str | None = None
+    behavior_name: str | None = None
+
+
+class SubstitutionMadeMessage(BaseModel):
+    type: Literal["substitutionMade"] = "substitutionMade"
+    data: SubstitutionMadeData
+
+
 def match_started_message(
     match_id: str,
     info: MatchInfo,
@@ -219,5 +234,23 @@ def match_resumed_message(
             match_id=match_id,
             tick=state.tick,
             resume_type=f"after_{pause}",
+        )
+    )
+
+
+def substitution_made_message(
+    match_id: str,
+    state: MatchState,
+    sub: PendingSubstitution,
+    include_behavior: bool = False,
+) -> SubstitutionMadeMessage:
+    return SubstitutionMadeMessage(
+        data=SubstitutionMadeData(
+            match_id=match_id,
+            tick=state.tick,
+            player_in_id=sub.player_in_id,
+            player_out_id=sub.player_out_id,
+            behavior_id=sub.behavior_id if include_behavior else None,
+            behavior_name=sub.behavior_name if include_behavior else None,
         )
     )
