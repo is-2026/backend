@@ -113,6 +113,7 @@ def _execute_pending_subs(live: LiveMatch) -> list[PendingSubstitution]:
     for team_id, sub in pending.items():
         execute_substitution(live.state, live.info, live.executor, team_id, sub)
         executed.append(sub)
+    return executed
 
 
 async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
