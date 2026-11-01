@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from app.engine.engine import change_player
 from app.engine.executor import BehaviorExecutor
 from app.engine.state import MatchState, PlayerState, Side
-from app.ws.match.messages import MatchInfo
+from app.ws.match.info import MatchInfo
 from app.ws.match.pauses import Pause
 
 
