@@ -275,6 +275,18 @@ def _resolve_kicks(
     winner.cooldown = round(_scale(winner.agility, COOLDOWN_TICKS_RANGE))
 
 
+def change_player(
+    state: MatchState, player_out_id: str, player_in: PlayerState
+) -> None:
+    """Se hace el cambio de jugador entrante por saliente. Toma la misma posición"""
+    for i, player in enumerate(state.players):
+        if player.id == player_out_id:
+            player_in.x = player.x
+            player_in.y = player.y
+            state.players[i] = player_in
+            return
+
+
 def step(
     state: MatchState,
     actions: dict[str, Action],

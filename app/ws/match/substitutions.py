@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
-from app.engine.state import MatchState, Side
+from app.engine.engine import change_player
+from app.engine.executor import BehaviorExecutor
+from app.engine.state import MatchState, PlayerState, Side
 from app.ws.match.messages import MatchInfo
 from app.ws.match.pauses import Pause
 
@@ -103,3 +105,26 @@ def cancel(
     if sub is None:
         raise NoPendingSubstitution("No hay sustituciones pendientes para borrar")
     return sub
+
+
+def execute_substitution(
+    state: MatchState,
+    info: MatchInfo,
+    executor: BehaviorExecutor,
+    team_id: str,
+    sub: PendingSubstitution,
+) -> None:
+    side = get_side(team_id, info)
+    lineup = info.home_lineup if side == Side.HOME else info.away_lineup
+    player_info = next(p for p in lineup if p.player_id == sub.player_in_id)
+    player_in_state = PlayerState(
+        id=sub.player_in_id,
+        side=side,
+        power=player_info.power,
+        agility=player_info.agility,
+        control=player_info.control,
+        speed=player_info.speed,
+        strength=player_info.strength,
+    )
+    change_player(state, sub.player_out_id, player_in_state)
+    executor.set_behavior(sub.player_in_id, sub.behavior_code)
