@@ -17,6 +17,16 @@ exclude = [
 # B: flake8-bugbear (prevención de bugs y malas prácticas)
 select = ["E", "W", "F", "I", "B"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI declara las dependencias en los defaults: no es el bug que busca B008
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Depends",
+    "fastapi.Path",
+    "fastapi.Query",
+    "fastapi.Security",
+]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
