@@ -19,6 +19,7 @@ from app.ws.match.messages import (
     match_started_message,
     match_state_message,
     pause_start_message,
+    substitution_made_message,
 )
 from app.ws.match.pauses import (
     COOLING_BREAK_SECONDS,
@@ -26,7 +27,7 @@ from app.ws.match.pauses import (
     Pause,
     pauses_schedule,
 )
-from app.ws.match.substitutions import PendingSubstitution
+from app.ws.match.substitutions import PendingSubstitution, execute_substitution
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,16 @@ def start_match(
     return live
 
 
+def _execute_pending_subs(live: LiveMatch) -> list[PendingSubstitution]:
+    """Ejecuta las sustituciones pendientes y devuelve las que se hicieron."""
+    pending = live.pending_substitutions.copy()
+    live.pending_substitutions.clear()
+    executed = []
+    for team_id, sub in pending.items():
+        execute_substitution(live.state, live.info, live.executor, team_id, sub)
+        executed.append(sub)
+
+
 async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
     """Avisa la pausa, espera y avisa la reanudación del partido"""
     match_id = str(live.match_id)
@@ -111,6 +122,7 @@ async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
         match_id, live.state, pause, seconds
     ).model_dump(mode="json")
     live.phase = Phase.PAUSED
+    live.pauses_started += 1
     await match_connections.broadcast(live.match_id, live.current_pause)
 
     await asyncio.sleep(seconds)
@@ -119,6 +131,17 @@ async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
         kickoff(live.state)
     live.phase = Phase.PLAYING
     live.current_pause = None
+
+    executed_subs = _execute_pending_subs(live)
+    if executed_subs:
+        # el que se conecte justo después de los cambios tiene que ver los que entraron
+        live.last_state = _state_payload(live)
+    for sub in executed_subs:
+        msg = substitution_made_message(match_id, live.state, sub)
+        await match_connections.broadcast(
+            live.match_id, msg.model_dump(mode="json", exclude_none=True)
+        )
+
     resumed = match_resumed_message(match_id, live.state, pause)
     await match_connections.broadcast(live.match_id, resumed.model_dump(mode="json"))
 
