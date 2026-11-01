@@ -6,26 +6,19 @@ import pytest
 from app.engine.executor import BehaviorExecutor
 from app.ws.close_codes import NORMAL
 from app.ws.match import runner
+from app.ws.match.pauses import Pause
 from app.ws.match.runner import (
     LiveMatch,
+    Phase,
     live_matches,
     match_connections,
     run_match,
     start_match,
 )
+from app.ws.match.substitutions import PendingSubstitution, substitution_window
 from tests.ws.conftest import FakeWebSocket
 
 TOTAL_TICKS = 5  # pausas después de los ticks 1, 2 y 3
-<<<<<<< HEAD
-
-NO_WAIT = {
-    "tick_interval": 0,
-    "start_delay": 0,
-    "cooling_break_duration": 0,
-    "halftime_duration": 0,
-}
-=======
->>>>>>> 98b84fe (ING-143 tests: agregar test de orden de mensajes de pausa y de duración)
 
 NO_WAIT = {
     "tick_interval": 0,
@@ -169,11 +162,44 @@ async def test_each_pause_last_its_duration_and_play_resumes(live, client):
     for start_type, duration in [("coolingBreakStart", 0.1), ("halftimeStart", 0.2)]:
         i = types.index(start_type)
         assert types[i + 1] == "matchResumed"
-<<<<<<< HEAD
         assert client.times[i + 1] - client.times[i] == pytest.approx(
             duration, abs=0.03
         )
-=======
-        assert client.times[i+1] - client.times[i] == pytest.approx(duration, abs=0.03)
->>>>>>> 98b84fe (ING-143 tests: agregar test de orden de mensajes de pausa y de duración)
         assert types[i + 2] == "matchState"
+
+
+def pending_sub(out_id: str, in_id: str) -> PendingSubstitution:
+    return PendingSubstitution(
+        id=f"sub-{in_id}",
+        player_out_id=out_id,
+        player_in_id=in_id,
+        behavior_id="b-1",
+        behavior_name="Atacante",
+        behavior_code="def decide_action():\n    pass\n",
+        window=Pause.COOLING_BREAK_1,
+    )
+
+
+async def test_pending_substitutions_runs_at_the_end_of_the_pause(live, client):
+    live.pending_substitutions["club-local"] = pending_sub("h1", "h4")
+    live.pending_substitutions["club-visitante"] = pending_sub("a1", "a4")
+
+    await run_match(live, **NO_WAIT)
+
+    made = [
+        m["data"]["player_in_id"]
+        for m in client.sent
+        if m["type"] == "substitutionMade"
+    ]
+    assert sorted(made) == ["a4", "h4"]
+    assert summary(client.sent)[:5] == [
+        ("matchState", 1),
+        ("coolingBreakStart", 1),
+        ("substitutionMade", 1),
+        ("substitutionMade", 1),
+        ("matchResumed", 1),
+    ]
+    ids = [p.id for p in live.state.players]
+    assert "h4" in ids and "h1" not in ids
+    assert "a4" in ids and "a1" not in ids
+    assert live.pending_substitutions == {}
