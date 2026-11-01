@@ -17,8 +17,10 @@ from app.ws.match.runner import LiveMatch, Phase, live_matches
 from app.ws.match.substitutions import (
     ClubNotInMatch,
     InvalidSubstitution,
+    NoPendingSubstitution,
     PendingSubstitution,
     SubstitutionConflict,
+    cancel,
     get_side,
     schedule,
     substitution_window,
@@ -75,7 +77,7 @@ class MatchApiImpl(BaseMatchApi):
             raise HTTPException(status_code=400, detail="El comportamiento no existe")
 
         if match_id not in live_matches:
-            # termino mientras fuimos a buscar el behavior a la db
+            # terminó mientras fuimos a buscar el behavior a la db
             raise HTTPException(status_code=404, detail="El partido no está en juego")
 
         player_out_id = str(schedule_substitution_input.player_out_id)
@@ -110,5 +112,20 @@ class MatchApiImpl(BaseMatchApi):
             status="pending",
         )
 
-    async def unschedule_substitution(self, match_id) -> None:
-        raise NotImplementedError
+    async def unschedule_substitution(self, match_id, club_id) -> None:
+        live = live_matches.get(match_id)
+        if live is None:
+            raise HTTPException(status_code=404, detail="El partido no está en juego")
+
+        team_id = str(club_id)
+        try:
+            get_side(team_id, live.info)
+        except ClubNotInMatch as e:
+            raise HTTPException(
+                status_code=403, detail="El club no juega este partido"
+            ) from e
+
+        try:
+            cancel(live.pending, team_id)
+        except NoPendingSubstitution as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
