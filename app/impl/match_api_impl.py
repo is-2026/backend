@@ -126,6 +126,6 @@ class MatchApiImpl(BaseMatchApi):
             ) from e
 
         try:
-            cancel(live.pending, team_id)
+            cancel(live.pending_substitutions, team_id)
         except NoPendingSubstitution as e:
-            raise HTTPException(status_code=409, detail=str(e)) from e
+            raise HTTPException(status_code=404, detail=str(e)) from e
