@@ -11,6 +11,7 @@ class FakeWebSocket:
 
     def __init__(self, fail: bool = False, hang: bool = False):
         self.sent: list[dict] = []
+        self.times: list[float] = []
         self.closed_code: int | None = None
         self._fail = fail
         self._hang = hang
@@ -20,6 +21,7 @@ class FakeWebSocket:
             await asyncio.Event().wait()  # cliente trabado: nunca termina
         if self._fail:
             raise RuntimeError("cliente desconectado")
+        self.times.append(asyncio.get_running_loop().time())
         self.sent.append(data)
 
     async def close(self, code: int = 1000):

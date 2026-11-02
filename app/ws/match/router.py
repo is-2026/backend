@@ -26,6 +26,9 @@ async def match_stream(
         # primero matchStarted y el último estado, y después anotarlo así no le llega un tick viejo después de uno nuevo
         await match_connections.send(websocket, started_payload(live))
         await match_connections.send(websocket, live.last_state)
+        if live.current_pause is not None:
+            await match_connections.send(websocket, live.current_pause)
+
         if match_id not in live_matches:
             # terminó mientras le mandábamos el estado: ya nadie lo va a cerrar
             await websocket.close(code=NORMAL)

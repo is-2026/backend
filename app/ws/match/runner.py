@@ -4,18 +4,27 @@ import random
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from enum import StrEnum
 
-from app.engine.behavior_exec import PlayerBrain, create_brains, decide_actions
 from app.engine.constants import DT
 from app.engine.engine import kickoff, step
+from app.engine.executor import BehaviorExecutor
 from app.engine.state import MatchState
 from app.ws.connection_manager import ConnectionManager
 from app.ws.match.messages import (
     MatchInfo,
     goal_message,
     match_finished_message,
+    match_resumed_message,
     match_started_message,
     match_state_message,
+    pause_start_message,
+)
+from app.ws.match.pauses import (
+    COOLING_BREAK_SECONDS,
+    HALFTIME_SECONDS,
+    Pause,
+    pauses_schedule,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,16 +32,28 @@ logger = logging.getLogger(__name__)
 START_DELAY_SECONDS = 3.0  # tiempo para que los clientes se conecten antes del tick 1
 
 
+class Phase(StrEnum):
+    WAITING = "waiting"
+    PLAYING = "playing"
+    PAUSED = "paused"
+    PENALTIES = "penalties"
+    FINISHED = "finished"
+
+
 @dataclass
 class LiveMatch:
     match_id: uuid.UUID
     state: MatchState
-    brains: dict[str, PlayerBrain]
+    executor: BehaviorExecutor
     # lo fijo de matchStarted (clubes y alineaciones)
     info: MatchInfo
     match_start: datetime  # cuándo termina la espera y empieza a correr el partido
+    # fase interna del runner
+    phase: Phase = Phase.WAITING
     # último matchState ya serializado, para el que se conecta
     last_state: dict | None = None
+    # inicio de la pausa en curso ya serializado para el que se une justo en la pausa
+    current_pause: dict | None = None
     # referencia a la tarea, si nadie la guarda, se puede perder
     task: asyncio.Task | None = None
 
@@ -50,6 +71,8 @@ def start_match(
     *,
     tick_interval: float = DT,
     start_delay: float = START_DELAY_SECONDS,
+    cooling_break_duration: float = COOLING_BREAK_SECONDS,
+    halftime_duration: float = HALFTIME_SECONDS,
 ) -> LiveMatch:
     """Prepara el partido, lo anota en live_matches y lo larga como tarea de fondo.
     codes = player_id -> código del comportamiento.
@@ -61,59 +84,111 @@ def start_match(
     live = LiveMatch(
         match_id=match_id,
         state=state,
-        brains=create_brains(state, codes),
+        executor=BehaviorExecutor(state, codes),
         info=info,
         match_start=datetime.now(timezone.utc) + timedelta(seconds=start_delay),
     )
     # el que se conecta durante la espera ya ve a los jugadores en formación (tick 0)
     live.last_state = _state_payload(live)
     live_matches[match_id] = live
-    live.task = asyncio.create_task(run_match(live, tick_interval, start_delay))
+    live.task = asyncio.create_task(
+        run_match(
+            live, tick_interval, start_delay, cooling_break_duration, halftime_duration
+        )
+    )
     return live
+
+
+async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
+    """Avisa la pausa, espera y avisa la reanudación del partido"""
+    match_id = str(live.match_id)
+    live.current_pause = pause_start_message(
+        match_id, live.state, pause, seconds
+    ).model_dump(mode="json")
+    live.phase = Phase.PAUSED
+    await match_connections.broadcast(live.match_id, live.current_pause)
+
+    await asyncio.sleep(seconds)
+
+    if pause == Pause.HALFTIME:
+        kickoff(live.state)
+    live.phase = Phase.PLAYING
+    live.current_pause = None
+    resumed = match_resumed_message(match_id, live.state, pause)
+    await match_connections.broadcast(live.match_id, resumed.model_dump(mode="json"))
+
+
+async def _tick(live: LiveMatch, rng: random.Random) -> None:
+    """Avanza el partido un tick: decide -> step -> goal(s) -> matchState."""
+    actions = await live.executor.decide(live.state)
+    goals = step(live.state, actions, rng)
+
+    for goal in goals:
+        message = goal_message(str(live.match_id), goal, live.state)
+        await match_connections.broadcast(
+            live.match_id, message.model_dump(mode="json")
+        )
+
+    live.last_state = _state_payload(live)
+    await match_connections.broadcast(live.match_id, live.last_state)
+    
+
+
+async def _notify_finish(live: LiveMatch) -> None:
+    """Avisa que el partido terminó bien"""
+    finished = match_finished_message(str(live.match_id), live.state)
+    await match_connections.broadcast(live.match_id, finished.model_dump(mode="json"))
+
+
+async def _clear(live: LiveMatch) -> None:
+    """Cierra el partido, haya terminado bien o con error: lo saca de live_matches,
+    cierra las conexiones y el executor."""
+    live.phase = Phase.FINISHED
+    live_matches.pop(live.match_id, None)
+    await match_connections.close_all(live.match_id)
+    live.executor.close()
 
 
 async def run_match(
     live: LiveMatch,
     tick_interval: float = DT,
     start_delay: float = START_DELAY_SECONDS,
+    cooling_break_duration: float = COOLING_BREAK_SECONDS,
+    halftime_duration: float = HALFTIME_SECONDS,
 ) -> None:
-    """Espera start_delay y juega hasta total_ticks.
-    Por tick: decide_actions -> step -> goal(s) -> matchState.
-    Al terminar bien se manda matchFinished, luego lo saca de live_matches
-    y cierra las conexiones (también si se cierra mal)."""
+    """Espera start_delay, juega hasta total_ticks con las pausas en el medio
+    y avisa el final. Pase lo que pase, al final cierra el partido con _clear."""
     loop = asyncio.get_running_loop()
     rng = random.Random()
     try:
+        pause_schedule = pauses_schedule(live.state.total_ticks)
         await asyncio.sleep(start_delay)
+        live.phase = Phase.PLAYING
         next_tick = loop.time()
         while live.state.tick < live.state.total_ticks:
-            actions = decide_actions(live.state, live.brains)
-            goals = step(live.state, actions, rng)
+            await _tick(live, rng)
 
-            for goal in goals:
-                message = goal_message(str(live.match_id), goal, live.state)
-                await match_connections.broadcast(
-                    live.match_id, message.model_dump(mode="json")
+            pause = pause_schedule.get(live.state.tick)
+            if pause is not None:
+                pause_duration = (
+                    halftime_duration
+                    if pause == Pause.HALFTIME
+                    else cooling_break_duration
                 )
-
-            live.last_state = _state_payload(live)
-            await match_connections.broadcast(live.match_id, live.last_state)
+                await _pause(live, pause, pause_duration)
+                # el próximo tick se cuenta desde ahora
+                next_tick = loop.time()
 
             # dormir hasta el próximo tick descontando lo que tardó este,
             # así el partido dura lo que tiene que durar
             next_tick += tick_interval
             await asyncio.sleep(max(0.0, next_tick - loop.time()))
 
-        # cuando se termina de jugar:
-        finished = match_finished_message(str(live.match_id), live.state)
-        await match_connections.broadcast(
-            live.match_id, finished.model_dump(mode="json")
-        )
+        await _notify_finish(live)
     except Exception:
         logger.exception("El partido %s se cortó por un error", live.match_id)
     finally:
-        live_matches.pop(live.match_id, None)
-        await match_connections.close_all(live.match_id)
+        await _clear(live)
 
 
 def _state_payload(live: LiveMatch) -> dict:
@@ -124,7 +199,8 @@ def _state_payload(live: LiveMatch) -> dict:
 def started_payload(live: LiveMatch) -> dict:
     """matchStarted para el que se acaba de conectar, con el tick y marcador de ahora.
     exclude_none: los suplentes no llevan behavior_id/behavior_name (en vez de null)."""
+    status = "paused" if live.phase == Phase.PAUSED else "in_progress"
     message = match_started_message(
-        str(live.match_id), live.info, live.match_start, live.state
+        str(live.match_id), live.info, live.match_start, live.state, status
     )
     return message.model_dump(mode="json", exclude_none=True)
