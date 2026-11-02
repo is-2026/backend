@@ -36,7 +36,7 @@ def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(value, high))
 
 
-def _reset_positions(
+def kickoff(
     state: MatchState,
 ) -> None:
     """Jugadores vuelven a la formación inicial y la pelota al centro."""
@@ -185,7 +185,7 @@ def _check_goal(state: MatchState) -> GoalEvent | None:
         team_id=team_id,
         minute=state.tick // TICKS_PER_MINUTE,
     )
-    _reset_positions(state)
+    kickoff(state)
     return event
 
 
@@ -273,14 +273,6 @@ def _resolve_kicks(
     ball.vx, ball.vy = vx, vy
     ball.last_touch_id = winner.id
     winner.cooldown = round(_scale(winner.agility, COOLDOWN_TICKS_RANGE))
-
-
-def kickoff(state: MatchState) -> None:
-    """Deja el partido listo para el saque inicial, lo tiene que llamar el runner antes del primer step"""
-    _reset_positions(state)
-    state.tick = 0
-    state.home_score = 0
-    state.away_score = 0
 
 
 def step(

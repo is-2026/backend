@@ -14,8 +14,16 @@ from app.ws.match.messages import (
     MatchInfo,
     goal_message,
     match_finished_message,
+    match_resumed_message,
     match_started_message,
     match_state_message,
+    pause_start_message,
+)
+from app.ws.match.pauses import (
+    COOLING_BREAK_SECONDS,
+    HALFTIME_SECONDS,
+    Pause,
+    pauses_schedule,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,6 +41,8 @@ class LiveMatch:
     match_start: datetime  # cuándo termina la espera y empieza a correr el partido
     # último matchState ya serializado, para el que se conecta
     last_state: dict | None = None
+    # inicio de la pausa en curso ya serializado para el que se une justo en la pausa
+    current_pause: dict | None = None
     # referencia a la tarea, si nadie la guarda, se puede perder
     task: asyncio.Task | None = None
 
@@ -50,6 +60,8 @@ def start_match(
     *,
     tick_interval: float = DT,
     start_delay: float = START_DELAY_SECONDS,
+    cooling_break_duration: float = COOLING_BREAK_SECONDS,
+    halftime_duration: float = HALFTIME_SECONDS,
 ) -> LiveMatch:
     """Prepara el partido, lo anota en live_matches y lo larga como tarea de fondo.
     codes = player_id -> código del comportamiento.
@@ -68,22 +80,47 @@ def start_match(
     # el que se conecta durante la espera ya ve a los jugadores en formación (tick 0)
     live.last_state = _state_payload(live)
     live_matches[match_id] = live
-    live.task = asyncio.create_task(run_match(live, tick_interval, start_delay))
+    live.task = asyncio.create_task(
+        run_match(
+            live, tick_interval, start_delay, cooling_break_duration, halftime_duration
+        )
+    )
     return live
+
+
+async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
+    """Avisa la pausa, espera y avisa la reanudación del partido"""
+    match_id = str(live.match_id)
+    live.current_pause = pause_start_message(
+        match_id, live.state, pause, seconds
+    ).model_dump(mode="json")
+    await match_connections.broadcast(live.match_id, live.current_pause)
+
+    await asyncio.sleep(seconds)
+
+    if pause == Pause.HALFTIME:
+        kickoff(live.state)
+    live.current_pause = None
+    resumed = match_resumed_message(match_id, live.state, pause)
+    await match_connections.broadcast(live.match_id, resumed.model_dump(mode="json"))
 
 
 async def run_match(
     live: LiveMatch,
     tick_interval: float = DT,
     start_delay: float = START_DELAY_SECONDS,
+    cooling_break_duration: float = COOLING_BREAK_SECONDS,
+    halftime_duration: float = HALFTIME_SECONDS,
 ) -> None:
     """Espera start_delay y juega hasta total_ticks.
     Por tick: decide_actions -> step -> goal(s) -> matchState.
+    Si hay una pausa espera y envía los avisos correspondientes.
     Al terminar bien se manda matchFinished, luego lo saca de live_matches
     y cierra las conexiones (también si se cierra mal)."""
     loop = asyncio.get_running_loop()
     rng = random.Random()
     try:
+        pause_schedule = pauses_schedule(live.state.total_ticks)
         await asyncio.sleep(start_delay)
         next_tick = loop.time()
         while live.state.tick < live.state.total_ticks:
@@ -98,6 +135,17 @@ async def run_match(
 
             live.last_state = _state_payload(live)
             await match_connections.broadcast(live.match_id, live.last_state)
+
+            pause = pause_schedule.get(live.state.tick)
+            if pause is not None:
+                pause_duration = (
+                    halftime_duration
+                    if pause == Pause.HALFTIME
+                    else cooling_break_duration
+                )
+                await _pause(live, pause, pause_duration)
+                # el próximo tick se cuenta desde ahora
+                next_tick = loop.time()
 
             # dormir hasta el próximo tick descontando lo que tardó este,
             # así el partido dura lo que tiene que durar
@@ -124,7 +172,8 @@ def _state_payload(live: LiveMatch) -> dict:
 def started_payload(live: LiveMatch) -> dict:
     """matchStarted para el que se acaba de conectar, con el tick y marcador de ahora.
     exclude_none: los suplentes no llevan behavior_id/behavior_name (en vez de null)."""
+    status = "paused" if live.current_pause is not None else "in_progress"
     message = match_started_message(
-        str(live.match_id), live.info, live.match_start, live.state
+        str(live.match_id), live.info, live.match_start, live.state, status
     )
     return message.model_dump(mode="json", exclude_none=True)

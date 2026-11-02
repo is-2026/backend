@@ -1,12 +1,17 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from app.engine.events import GoalEvent
 from app.ws.match.messages import (
     goal_message,
     match_finished_message,
+    match_resumed_message,
     match_started_message,
     match_state_message,
+    pause_start_message,
 )
+from app.ws.match.pauses import Pause
 
 MATCH_ID = "partido-1"
 
@@ -76,7 +81,7 @@ def test_goal_serializes_to_json_as_intended(match_state):
     }
 
 
-def test_match_finished_tiene_el_resultado_final(match_state):
+def test_match_finished_has_final_result(match_state):
     match_state.tick = 3000
     match_state.home_score = 2
     match_state.away_score = 3
@@ -90,7 +95,7 @@ def test_match_finished_tiene_el_resultado_final(match_state):
     assert msg.data.status == "finished"
 
 
-def test_match_finished_se_serializa_como_el_asyncapi(match_state):
+def test_match_finished_serialzes_to_json_as_intended(match_state):
     payload = match_finished_message(MATCH_ID, match_state).model_dump(mode="json")
 
     assert payload["type"] == "matchFinished"
@@ -110,21 +115,94 @@ def test_match_started_serializes_to_json_as_intended(match_state, match_info):
     match_state.home_score = 2
     start = datetime(2026, 10, 4, 18, 30, 33, tzinfo=timezone.utc)
 
-    payload = match_started_message(MATCH_ID, match_info, start, match_state).model_dump(
-        mode="json", exclude_none=True
-    )
+    payload = match_started_message(
+        MATCH_ID, match_info, start, match_state
+    ).model_dump(mode="json", exclude_none=True)
 
     assert payload["type"] == "matchStarted"
     assert set(payload["data"]) == {
-        "match_id", "home_club", "away_club", "home_lineup", "away_lineup",
-        "match_start", "tick", "total_ticks", "home_score", "away_score", "status",
+        "match_id",
+        "home_club",
+        "away_club",
+        "home_lineup",
+        "away_lineup",
+        "match_start",
+        "tick",
+        "total_ticks",
+        "home_score",
+        "away_score",
+        "status",
     }
     data = payload["data"]
     assert data["match_start"] == "2026-10-04T18:30:33Z"
     assert (data["tick"], data["total_ticks"]) == (7, 3000)
-    assert (data["home_score"], data["away_score"], data["status"]) == (2, 0, "in_progress")
+    assert (data["home_score"], data["away_score"], data["status"]) == (
+        2,
+        0,
+        "in_progress",
+    )
     assert data["home_lineup"][0] == {
-        "player_id": "h1", "number": 1, "name": "Jugador h1", "is_starter": True,
-        "power": 60, "agility": 60, "control": 60, "speed": 60, "strength": 60,
-        "behavior_id": "b-h1", "behavior_name": "Atacante",
+        "player_id": "h1",
+        "number": 1,
+        "name": "Jugador h1",
+        "is_starter": True,
+        "power": 60,
+        "agility": 60,
+        "control": 60,
+        "speed": 60,
+        "strength": 60,
+        "behavior_id": "b-h1",
+        "behavior_name": "Atacante",
     }
+
+
+@pytest.mark.parametrize(
+    "pause, number", [(Pause.COOLING_BREAK_1, 1), (Pause.COOLING_BREAK_2, 2)]
+)
+def test_cooling_break_start_has_its_number_and_end(match_state, pause, number):
+    match_state.tick = 750
+
+    msg = pause_start_message(MATCH_ID, match_state, pause, 15)
+
+    assert msg.type == "coolingBreakStart"
+    assert (msg.data.match_id, msg.data.tick) == (MATCH_ID, 750)
+    assert msg.data.cooling_break_number == number
+    assert msg.data.ends_at - msg.data.cooling_break_start == timedelta(seconds=15)
+
+
+def test_halftime_start_serializes_as_asyncapi(match_state):
+    match_state.tick = 1500
+
+    msg = pause_start_message(MATCH_ID, match_state, Pause.HALFTIME, 15)
+    payload = msg.model_dump(mode="json")
+
+    assert payload["type"] == "halftimeStart"
+    assert set(payload["data"]) == {"match_id", "tick", "halftime_start", "ends_at"}
+    start = datetime.fromisoformat(payload["data"]["halftime_start"])
+    ends_at = datetime.fromisoformat(payload["data"]["ends_at"])
+    assert ends_at - start == timedelta(seconds=15)
+
+
+@pytest.mark.parametrize(
+    "pause, resume_type",
+    [
+        (Pause.COOLING_BREAK_1, "after_cooling_break_1"),
+        (Pause.HALFTIME, "after_halftime"),
+        (Pause.COOLING_BREAK_2, "after_cooling_break_2"),
+    ],
+)
+def test_match_resumed_says_which_pause_ended(match_state, pause, resume_type):
+    match_state.tick = 1500
+
+    msg = match_resumed_message(MATCH_ID, match_state, pause)
+
+    assert msg.type == "matchResumed"
+    assert (msg.data.tick, msg.data.resume_type) == (1500, resume_type)
+
+
+def test_match_started_can_say_paused(match_state, match_info):
+    start = datetime.now(timezone.utc)
+
+    msg = match_started_message(MATCH_ID, match_info, start, match_state, "paused")
+
+    assert msg.data.status == "paused"

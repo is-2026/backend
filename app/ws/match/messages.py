@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from pydantic import BaseModel
@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from app.engine.constants import TICKS_PER_MINUTE
 from app.engine.events import GoalEvent
 from app.engine.state import MatchState
+from app.ws.match.pauses import Pause
 
 
 class Position(BaseModel):
@@ -59,6 +60,9 @@ class MatchInfo(BaseModel):
     away_lineup: list[LineupPlayer]
 
 
+MatchStatus = Literal["in_progress", "paused", "finished"]
+
+
 class MatchStartedData(MatchInfo):
     match_id: str
     match_start: datetime
@@ -66,7 +70,7 @@ class MatchStartedData(MatchInfo):
     total_ticks: int
     home_score: int
     away_score: int
-    status: Literal["in_progress", "paused", "finished"] = "in_progress"
+    status: MatchStatus = "in_progress"
 
 
 class MatchStartedMessage(BaseModel):
@@ -103,8 +107,50 @@ class MatchFinishedMessage(BaseModel):
     data: MatchFinishedData
 
 
+class CoolingBreakStartData(BaseModel):
+    match_id: str
+    tick: int
+    cooling_break_number: int
+    cooling_break_start: datetime
+    ends_at: datetime
+
+
+class CoolingBreakStartMessage(BaseModel):
+    type: Literal["coolingBreakStart"] = "coolingBreakStart"
+    data: CoolingBreakStartData
+
+
+class HalftimeStartData(BaseModel):
+    match_id: str
+    tick: int
+    halftime_start: datetime
+    ends_at: datetime
+
+
+class HalftimeStartMessage(BaseModel):
+    type: Literal["halftimeStart"] = "halftimeStart"
+    data: HalftimeStartData
+
+
+class MatchResumedData(BaseModel):
+    match_id: str
+    tick: int
+    resume_type: Literal[
+        "after_cooling_break_1", "after_cooling_break_2", "after_halftime"
+    ]
+
+
+class MatchResumedMessage(BaseModel):
+    type: Literal["matchResumed"] = "matchResumed"
+    data: MatchResumedData
+
+
 def match_started_message(
-    match_id: str, info: MatchInfo, match_start: datetime, state: MatchState
+    match_id: str,
+    info: MatchInfo,
+    match_start: datetime,
+    state: MatchState,
+    status: MatchStatus = "in_progress",
 ) -> MatchStartedMessage:
     """Lo fijo sale de `info`; tick y marcador, del estado en este momento."""
     return MatchStartedMessage(
@@ -116,6 +162,7 @@ def match_started_message(
             total_ticks=state.total_ticks,
             home_score=state.home_score,
             away_score=state.away_score,
+            status=status,
         )
     )
 
@@ -160,5 +207,45 @@ def match_finished_message(match_id: str, state: MatchState) -> MatchFinishedMes
             home_score=state.home_score,
             away_score=state.away_score,
             match_end=datetime.now(timezone.utc),
+        )
+    )
+
+
+def pause_start_message(
+    match_id: str, state: MatchState, pause: Pause, seconds: float
+) -> CoolingBreakStartMessage | HalftimeStartMessage:
+    """Aviso de que empezó pause. seconds es lo que va a durar de verdad"""
+    now = datetime.now(timezone.utc)
+    ends_at = now + timedelta(seconds=seconds)
+    if pause == Pause.HALFTIME:
+        return HalftimeStartMessage(
+            data=HalftimeStartData(
+                match_id=match_id,
+                tick=state.tick,
+                halftime_start=now,
+                ends_at=ends_at,
+            )
+        )
+    else:
+        return CoolingBreakStartMessage(
+            data=CoolingBreakStartData(
+                match_id=match_id,
+                tick=state.tick,
+                cooling_break_number=1 if pause == Pause.COOLING_BREAK_1 else 2,
+                cooling_break_start=now,
+                ends_at=ends_at,
+            )
+        )
+
+
+def match_resumed_message(
+    match_id: str, state: MatchState, pause: Pause
+) -> MatchResumedMessage:
+    """Aviso de que terminó pause. El tick es el mismo del inicio"""
+    return MatchResumedMessage(
+        data=MatchResumedData(
+            match_id=match_id,
+            tick=state.tick,
+            resume_type=f"after_{pause}",
         )
     )
