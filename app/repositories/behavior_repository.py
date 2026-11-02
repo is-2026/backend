@@ -1,6 +1,5 @@
 import uuid
 
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, or_, select
@@ -13,6 +12,10 @@ from app.db.match import MatchDB, MatchStatus
 
 class DuplicateNameBehavior(Exception):
     """El nombre del comportamiento no esta disponible"""
+
+
+class BehaviorInUse(Exception):
+    """El comportamiento esta siendo utilizado en este momento"""
 
 
 class BehaviorRepository:
@@ -71,6 +74,15 @@ class BehaviorRepository:
 
         await self._session.refresh(behavior_updt)
         return behavior_updt
+
+    async def delete(self, behavior: BehaviorDB) -> None:
+        await self._session.delete(behavior)
+
+        try:
+            await self._session.commit()
+        except IntegrityError as info_exc:
+            await self._session.rollback()
+            raise BehaviorInUse() from info_exc
 
     async def is_assigned(self, behavior_id: uuid.UUID) -> bool:
         query = (

@@ -51,5 +51,5 @@ class FriendlyPlayerDB(Base):
     is_starter : Mapped[bool] = mapped_column(Boolean, nullable=False)
 
     behavior_id : Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("behaviors.id"), nullable= True
+        ForeignKey("behaviors.id", ondelete="SET NULL"), nullable= True
     )

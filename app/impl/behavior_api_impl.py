@@ -9,6 +9,7 @@ from app.models.behavior import Behavior
 from app.repositories.behavior_repository import (
     BehaviorRepository,
     DuplicateNameBehavior,
+    BehaviorInUse
 )
 
 
@@ -107,7 +108,7 @@ class BehaviorApiImpl(BaseBehaviorsApi):
             raise HTTPException(
                 status_code=409, detail="El nombre ingresado no esta disponible"
             )
-        
+
         if updt_behavior is None:
             raise HTTPException(status_code=404, detail="El comportamiento no existe")
 
@@ -117,3 +118,22 @@ class BehaviorApiImpl(BaseBehaviorsApi):
             code=updt_behavior.code,
             kind=updt_behavior.kind,
         )
+
+    async def delete_behavior(self, behavior_id: uuid.UUID, club_id: uuid.UUID) -> None:
+        repo = BehaviorRepository(self._session)
+
+        behavior = await repo.get_id_and_club(
+            behavior_id, club_id
+        )  # traigo todo el comportamiento
+        if behavior is None:
+            raise HTTPException(status_code=404, detail="El comportamiento no existe")
+
+        if await repo.is_assigned(behavior_id):
+            raise HTTPException(status_code = 409, detail= "El comportamiento esta siendo utilizado en una alineación, debes reemplazarlo para poder eliminarlo")
+
+        try:
+            await repo.delete(behavior)
+        except BehaviorInUse as exc_info:
+            raise HTTPException(status_code = 409, detail= "El comportamiento esta siendo utilizado en una alineación") from exc_info
+
+        
