@@ -37,9 +37,10 @@ class Club(BaseModel):
     club_name: Optional[StrictStr] = None
     avatar_url: Optional[StrictStr] = None
     default_formation_id: Optional[UUID] = None
+    coach_behavior_id : Optional[UUID] = None
     user_id: Optional[UUID] = None
     created_at: Optional[datetime] = None
-    __properties: ClassVar[List[str]] = ["id", "club_name", "avatar_url", "default_formation_id", "user_id", "created_at"]
+    __properties: ClassVar[List[str]] = ["id", "club_name", "avatar_url", "default_formation_id", "coach_behavior_id", "user_id", "created_at"]
 
     model_config = {
         "populate_by_name": True,
@@ -94,6 +95,7 @@ class Club(BaseModel):
             "club_name": obj.get("club_name"),
             "avatar_url": obj.get("avatar_url"),
             "default_formation_id": obj.get("default_formation_id"),
+            "coach_behavior_id": obj.get("coach_behavior_id"),
             "user_id": obj.get("user_id"),
             "created_at": obj.get("created_at")
         })

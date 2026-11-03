@@ -474,7 +474,7 @@ async def test_update_duplicate_name(session):
             behavior_b_db.id, club_db.id, "Correr", "def decide_action():\n x=912"
         )
 
-async def test_delete_succes(session):
+async def test_delete_player_succes(session):
     user_id = uuid.uuid4()
     user_db = UserDB(
         id=user_id, email="test@example.com", hashed_password="password123"
@@ -500,6 +500,45 @@ async def test_delete_succes(session):
         code = "def decide_action():\n pass",
         club_id = club_id,
         kind= "player"
+    )
+    session.add(behavior_db)
+    await session.commit()
+
+    consult_repo = BehaviorRepository(session)
+    await consult_repo.delete(behavior_db)
+
+    result = await session.scalar( ##Hago la consulta a ver si realmente delete lo hace
+        select(BehaviorDB).where(BehaviorDB.id == behavior_id)
+    )
+
+    assert result is None
+
+async def test_delete_behavior_coach_succes(session):
+    user_id = uuid.uuid4()
+    user_db = UserDB(
+        id=user_id, email="test@example.com", hashed_password="password123"
+    )
+    session.add(user_db)
+    await session.commit()
+
+    # 2. Creo el Club
+    club_id = uuid.uuid4()
+    club_db = ClubDB(
+        id=club_id,
+        club_name="Club de Prueba",
+        avatar_url="https://example.com/avatar.png",
+        user_id=user_id,
+    )
+    session.add(club_db)
+    await session.flush()
+
+    behavior_id = uuid.uuid4()
+    behavior_db = BehaviorDB(
+        id = behavior_id,
+        name = "Gagardo",
+        code = "def decide_coach():\n pass",
+        club_id = club_id,
+        kind= "coach"
     )
     session.add(behavior_db)
     await session.commit()

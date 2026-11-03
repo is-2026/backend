@@ -59,3 +59,15 @@ class ClubRepository:
 
     async def get_by_id(self, club_id: uuid.UUID) -> ClubDB | None:
         return await self._session.get(ClubDB, club_id)
+
+    async def update_coach(
+        self, club_id: uuid.UUID, behavior_id: uuid.UUID | None
+    ) -> ClubDB | None:
+        club_updt = await self.get_by_id(club_id)
+        if club_updt is None:
+            return None
+
+        club_updt.coach_behavior_id = behavior_id
+        await self._session.commit()
+        await self._session.refresh(club_updt)
+        return club_updt

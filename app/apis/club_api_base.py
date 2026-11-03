@@ -10,6 +10,7 @@ from app.models.club import Club
 from app.models.create_club_input import CreateClubInput
 from app.models.error import Error
 from app.models.history_item import HistoryItem
+from app.models.change_coach_input import ChangeCoachInput
 from app.security_api import get_token_bearerAuth
 
 class BaseClubApi:
@@ -63,5 +64,12 @@ class BaseClubApi:
     async def get_club(
         self,
         club_id: UUID,
+    ) -> Club:
+        ...
+
+    async def change_coach(
+        self,
+        change_coach_input: ChangeCoachInput,
+        club_id : UUID
     ) -> Club:
         ...
