@@ -11,3 +11,4 @@ import app.db.behavior # noqa
 import app.db.friendly #noqa
 import app.db.match # noqa
 import app.db.league # noqa
+import app.db.standings # noqa
