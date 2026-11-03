@@ -210,8 +210,8 @@ def test_match_started_can_say_paused(match_state, match_info):
     assert msg.data.status == "paused"
 
 
-def make_pending_sub() -> PendingSubstitution:
-    return PendingSubstitution(
+def test_substitution_made_has_the_players_and_the_behavior(match_state):
+    sub = PendingSubstitution(
         id="s1",
         player_out_id="h1",
         player_in_id="h4",
@@ -221,38 +221,9 @@ def make_pending_sub() -> PendingSubstitution:
         window=Pause.HALFTIME,
     )
 
+    data = substitution_made_message(MATCH_ID, match_state, sub).data
 
-def test_substitution_made_without_behavior_omits_it(match_state):
-    match_state.tick = 750
-
-    msg = substitution_made_message(MATCH_ID, match_state, make_pending_sub())
-
-    assert msg.model_dump(mode="json", exclude_none=True) == {
-        "type": "substitutionMade",
-        "data": {
-            "match_id": MATCH_ID,
-            "tick": 750,
-            "player_in_id": "h4",
-            "player_out_id": "h1",
-        },
-    }
-
-
-def test_substitution_made_with_behavior_includes_it(match_state):
-    match_state.tick = 1500
-
-    msg = substitution_made_message(
-        MATCH_ID, match_state, make_pending_sub(), include_behavior=True
-    )
-
-    assert msg.model_dump(mode="json", exclude_none=True) == {
-        "type": "substitutionMade",
-        "data": {
-            "match_id": MATCH_ID,
-            "tick": 1500,
-            "player_in_id": "h4",
-            "player_out_id": "h1",
-            "behavior_id": "b-1",
-            "behavior_name": "Atacante",
-        },
-    }
+    assert data.player_out_id == "h1"
+    assert data.player_in_id == "h4"
+    assert data.behavior_id == "b-1"
+    assert data.behavior_name == "Atacante"

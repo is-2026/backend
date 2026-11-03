@@ -242,7 +242,6 @@ def substitution_made_message(
     match_id: str,
     state: MatchState,
     sub: PendingSubstitution,
-    include_behavior: bool = False,
 ) -> SubstitutionMadeMessage:
     return SubstitutionMadeMessage(
         data=SubstitutionMadeData(
@@ -250,7 +249,7 @@ def substitution_made_message(
             tick=state.tick,
             player_in_id=sub.player_in_id,
             player_out_id=sub.player_out_id,
-            behavior_id=sub.behavior_id if include_behavior else None,
-            behavior_name=sub.behavior_name if include_behavior else None,
+            behavior_id=sub.behavior_id,
+            behavior_name=sub.behavior_name,
         )
     )
