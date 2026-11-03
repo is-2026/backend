@@ -16,16 +16,6 @@ from app.ws.match.runner import (
 from tests.ws.conftest import FakeWebSocket
 
 TOTAL_TICKS = 5  # pausas después de los ticks 1, 2 y 3
-<<<<<<< HEAD
-
-NO_WAIT = {
-    "tick_interval": 0,
-    "start_delay": 0,
-    "cooling_break_duration": 0,
-    "halftime_duration": 0,
-}
-=======
->>>>>>> 98b84fe (ING-143 tests: agregar test de orden de mensajes de pausa y de duración)
 
 NO_WAIT = {
     "tick_interval": 0,
@@ -169,11 +159,7 @@ async def test_each_pause_last_its_duration_and_play_resumes(live, client):
     for start_type, duration in [("coolingBreakStart", 0.1), ("halftimeStart", 0.2)]:
         i = types.index(start_type)
         assert types[i + 1] == "matchResumed"
-<<<<<<< HEAD
         assert client.times[i + 1] - client.times[i] == pytest.approx(
             duration, abs=0.03
         )
-=======
-        assert client.times[i+1] - client.times[i] == pytest.approx(duration, abs=0.03)
->>>>>>> 98b84fe (ING-143 tests: agregar test de orden de mensajes de pausa y de duración)
         assert types[i + 2] == "matchState"
