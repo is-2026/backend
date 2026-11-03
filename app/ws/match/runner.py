@@ -47,7 +47,7 @@ class LiveMatch:
     match_id: uuid.UUID
     state: MatchState
     executor: BehaviorExecutor
-    # lo fijo de matchStarted (clubes y alineaciones)
+    # clubes y alineaciones de matchStarted (al día con las sustituciones)
     info: MatchInfo
     match_start: datetime  # cuándo termina la espera y empieza a correr el partido
     # fase interna del runner

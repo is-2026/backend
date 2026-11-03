@@ -22,7 +22,7 @@ class LineupPlayer(BaseModel):
 
 
 class MatchInfo(BaseModel):
-    """Lo que no cambia durante el partido: clubes y alineaciones."""
+    """Clubes y alineaciones. Las alineaciones cambian con cada sustitución."""
 
     home_club: ClubSummary
     away_club: ClubSummary

@@ -166,6 +166,11 @@ async def test_execute_substitution(
     assert player.side == side
     assert player.power == 80
     assert player.speed == 40
+    player_in, player_out = lineup[3], lineup[0]  # [0] es h1 o a1
+    assert player_in.is_starter is True
+    assert (player_in.behavior_id, player_in.behavior_name) == ("b1", "bname")
+    assert player_out.is_starter is False
+    assert (player_out.behavior_id, player_out.behavior_name) == (None, None)
 
     actions = await executor.decide(match_state)
 

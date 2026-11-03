@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from app.engine.engine import change_player
 from app.engine.executor import BehaviorExecutor
 from app.engine.state import MatchState, PlayerState, Side
-from app.ws.match.info import MatchInfo
+from app.ws.match.info import LineupPlayer, MatchInfo
 from app.ws.match.pauses import Pause
 
 
@@ -128,3 +128,18 @@ def execute_substitution(
     )
     change_player(state, sub.player_out_id, player_in_state)
     executor.set_behavior(sub.player_in_id, sub.behavior_code)
+    _update_lineup(lineup, sub)
+
+
+def _update_lineup(lineup: list[LineupPlayer], sub: PendingSubstitution) -> None:
+    """Para que el matchStarted del que se conecta después muestre el cambio:
+    is_starter es "está en cancha" y solo los que están en cancha tienen behavior."""
+    for p in lineup:
+        if p.player_id == sub.player_in_id:
+            p.is_starter = True
+            p.behavior_id = sub.behavior_id
+            p.behavior_name = sub.behavior_name
+        elif p.player_id == sub.player_out_id:
+            p.is_starter = False
+            p.behavior_id = None
+            p.behavior_name = None
