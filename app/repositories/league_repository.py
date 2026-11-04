@@ -3,12 +3,15 @@ from dataclasses import dataclass
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import and_, delete, or_, select, update
 
+from app.db.behavior import BehaviorDB
 from app.db.match import MatchDB, MatchStatus
+from app.db.player import PlayerDB
 from app.db.standings import LeagueStandingsDB
 from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
+from app.repositories.friendly_repository import SquadMember
 
 from app.fixture.generator import generate_fixture
 
@@ -28,6 +31,21 @@ class SquadPlayerData:
     player_id: uuid.UUID
     is_starter: bool
     behavior_id: uuid.UUID | None = None
+
+
+def _apply_score(row: LeagueStandingsDB, goals_for: int, goals_against: int) -> None:
+    row.matches_played += 1
+    row.goals_for += goals_for
+    row.goals_against += goals_against
+    row.goals_dif = row.goals_for - row.goals_against
+    if goals_for > goals_against:
+        row.won += 1
+        row.points += 3
+    elif goals_for == goals_against:
+        row.drawn += 1
+        row.points += 1
+    else:
+        row.lost += 1
 
 
 class LeagueRepository:
@@ -230,3 +248,38 @@ class LeagueRepository:
             raise LeagueStartFailure from e
 
         await self._session.commit()
+
+    async def get_squad_by_match(self, match_id: uuid.UUID) -> list[SquadMember]:
+        """Los convocados vigentes en la liga para los dos clubes de ese partido:
+        primero los titulares, y dentro de cada grupo por numero de camiseta."""
+        result = await self._session.execute(
+            select(
+                LeagueEnrollmentDB.club_id,
+                PlayerDB,
+                LeagueEnrollmentPlayerDB.is_starter,
+                BehaviorDB,
+            )
+            .join(
+                MatchDB,
+                and_(
+                    MatchDB.league_id == LeagueEnrollmentDB.league_id,
+                    or_(
+                        LeagueEnrollmentDB.club_id == MatchDB.home_club_id,
+                        LeagueEnrollmentDB.club_id == MatchDB.away_club_id,
+                    ),
+                ),
+            )
+            .join(
+                LeagueEnrollmentPlayerDB,
+                LeagueEnrollmentPlayerDB.enrollment_id == LeagueEnrollmentDB.id,
+            )
+            .join(PlayerDB, PlayerDB.id == LeagueEnrollmentPlayerDB.player_id)
+            .outerjoin(
+                BehaviorDB, BehaviorDB.id == LeagueEnrollmentPlayerDB.behavior_id
+            )
+            .where(MatchDB.id == match_id)
+            .order_by(LeagueEnrollmentPlayerDB.is_starter.desc(), PlayerDB.number)
+        )
+        return [SquadMember(*row) for row in result.all()]
+
+
