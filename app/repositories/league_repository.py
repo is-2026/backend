@@ -282,4 +282,53 @@ class LeagueRepository:
         )
         return [SquadMember(*row) for row in result.all()]
 
+    async def update_standings(
+        self,
+        league_id: uuid.UUID,
+        home_club_id: uuid.UUID,
+        away_club_id: uuid.UUID,
+        home_score: int,
+        away_score: int,
+    ) -> None:
+        result = await self._session.execute(
+            select(LeagueStandingsDB, ClubDB.club_name)
+            .join(ClubDB, ClubDB.id == LeagueStandingsDB.club_id)
+            .where(LeagueStandingsDB.league_id == league_id)
+            .order_by(LeagueStandingsDB.club_id)
+            .with_for_update()  #bloqueo por fila para evitar race conditions (van a terminar muchos match a la vez)
+            .execution_options(populate_existing=True)  #lee los datos actualizados despues del bloqueo
+        )
+        rows = result.all()
 
+        for row, _ in rows:
+            if row.club_id == home_club_id:
+                _apply_score(row, home_score, away_score)
+            elif row.club_id == away_club_id:
+                _apply_score(row, away_score, home_score)
+
+        # paso intermedio con ranks negativos para no violar UniqueConstraint(league_id, rank)
+        for idx, (row, _) in enumerate(rows, start=1):
+            row.rank = -idx
+        await self._session.flush()
+
+        sorted_rows = sorted(
+            rows,
+            key=lambda item: (
+                -item[0].points,
+                -item[0].goals_dif,
+                -item[0].goals_for,
+                item[1].lower(),
+            ),
+        )
+        for rank, (row, _) in enumerate(sorted_rows, start=1):
+            row.rank = rank
+
+        await self._session.commit()
+
+    async def finish_league(self, league_id: uuid.UUID) -> None:
+        await self._session.execute(
+            update(LeagueDB)
+            .where(LeagueDB.id == league_id)
+            .values(status="finished")
+        )
+        await self._session.commit()
