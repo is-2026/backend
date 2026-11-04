@@ -2,8 +2,8 @@ import pytest
 
 from app.engine.constants import TRIANGLE_HOME
 from app.engine.state import MatchState, Side
+from app.ws.match.info import ClubSummary, LineupPlayer, MatchInfo
 from tests.engine.conftest import make_player
-from app.ws.match.messages import ClubSummary, LineupPlayer, MatchInfo
 
 
 @pytest.fixture

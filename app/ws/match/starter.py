@@ -10,7 +10,7 @@ from app.engine.state import MatchState, PlayerState, Side
 from app.repositories.club_repository import ClubRepository
 from app.repositories.friendly_repository import FriendlyRepository, SquadMember
 from app.repositories.match_repository import MatchRepository
-from app.ws.match.messages import ClubSummary, LineupPlayer, MatchInfo
+from app.ws.match.info import ClubSummary, LineupPlayer, MatchInfo
 from app.ws.match.runner import LiveMatch, live_matches, start_match
 
 logger = logging.getLogger(__name__)

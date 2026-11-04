@@ -2,7 +2,7 @@ import asyncio
 import logging
 import random
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
@@ -11,14 +11,15 @@ from app.engine.engine import kickoff, step
 from app.engine.executor import BehaviorExecutor
 from app.engine.state import MatchState
 from app.ws.connection_manager import ConnectionManager
+from app.ws.match.info import MatchInfo
 from app.ws.match.messages import (
-    MatchInfo,
     goal_message,
     match_finished_message,
     match_resumed_message,
     match_started_message,
     match_state_message,
     pause_start_message,
+    substitution_made_message,
 )
 from app.ws.match.pauses import (
     COOLING_BREAK_SECONDS,
@@ -26,6 +27,7 @@ from app.ws.match.pauses import (
     Pause,
     pauses_schedule,
 )
+from app.ws.match.substitutions import PendingSubstitution, execute_substitution
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +47,7 @@ class LiveMatch:
     match_id: uuid.UUID
     state: MatchState
     executor: BehaviorExecutor
-    # lo fijo de matchStarted (clubes y alineaciones)
+    # clubes y alineaciones de matchStarted (al día con las sustituciones)
     info: MatchInfo
     match_start: datetime  # cuándo termina la espera y empieza a correr el partido
     # fase interna del runner
@@ -54,6 +56,10 @@ class LiveMatch:
     last_state: dict | None = None
     # inicio de la pausa en curso ya serializado para el que se une justo en la pausa
     current_pause: dict | None = None
+    # team_id -> la sustitucion pedida por un club
+    pending_substitutions: dict[str, PendingSubstitution] = field(default_factory=dict)
+    # cuantas pausas empezaron
+    pauses_started: int = 0
     # referencia a la tarea, si nadie la guarda, se puede perder
     task: asyncio.Task | None = None
 
@@ -99,6 +105,17 @@ def start_match(
     return live
 
 
+def _execute_pending_subs(live: LiveMatch) -> list[PendingSubstitution]:
+    """Ejecuta las sustituciones pendientes y devuelve las que se hicieron."""
+    pending = live.pending_substitutions.copy()
+    live.pending_substitutions.clear()
+    executed = []
+    for team_id, sub in pending.items():
+        execute_substitution(live.state, live.info, live.executor, team_id, sub)
+        executed.append(sub)
+    return executed
+
+
 async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
     """Avisa la pausa, espera y avisa la reanudación del partido"""
     match_id = str(live.match_id)
@@ -106,6 +123,7 @@ async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
         match_id, live.state, pause, seconds
     ).model_dump(mode="json")
     live.phase = Phase.PAUSED
+    live.pauses_started += 1
     await match_connections.broadcast(live.match_id, live.current_pause)
 
     await asyncio.sleep(seconds)
@@ -114,6 +132,17 @@ async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
         kickoff(live.state)
     live.phase = Phase.PLAYING
     live.current_pause = None
+
+    executed_subs = _execute_pending_subs(live)
+    if executed_subs:
+        # el que se conecte justo después de los cambios tiene que ver los que entraron
+        live.last_state = _state_payload(live)
+    for sub in executed_subs:
+        msg = substitution_made_message(match_id, live.state, sub)
+        await match_connections.broadcast(
+            live.match_id, msg.model_dump(mode="json", exclude_none=True)
+        )
+
     resumed = match_resumed_message(match_id, live.state, pause)
     await match_connections.broadcast(live.match_id, resumed.model_dump(mode="json"))
 
@@ -131,7 +160,6 @@ async def _tick(live: LiveMatch, rng: random.Random) -> None:
 
     live.last_state = _state_payload(live)
     await match_connections.broadcast(live.match_id, live.last_state)
-    
 
 
 async def _notify_finish(live: LiveMatch) -> None:

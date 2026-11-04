@@ -6,7 +6,9 @@ from pydantic import BaseModel
 from app.engine.constants import TICKS_PER_MINUTE
 from app.engine.events import GoalEvent
 from app.engine.state import MatchState
+from app.ws.match.info import MatchInfo
 from app.ws.match.pauses import Pause
+from app.ws.match.substitutions import PendingSubstitution
 
 
 class Position(BaseModel):
@@ -29,35 +31,6 @@ class MatchStateData(BaseModel):
 class MatchStateMessage(BaseModel):
     type: Literal["matchState"] = "matchState"
     data: MatchStateData
-
-
-class ClubSummary(BaseModel):
-    id: str
-    name: str
-    avatar_url: str
-
-
-class LineupPlayer(BaseModel):
-    player_id: str
-    number: int
-    name: str
-    is_starter: bool
-    power: int
-    agility: int
-    control: int
-    speed: int
-    strength: int
-    behavior_id: str | None = None  # los suplentes no tienen
-    behavior_name: str | None = None
-
-
-class MatchInfo(BaseModel):
-    """Lo que no cambia durante el partido: clubes y alineaciones."""
-
-    home_club: ClubSummary
-    away_club: ClubSummary
-    home_lineup: list[LineupPlayer]
-    away_lineup: list[LineupPlayer]
 
 
 MatchStatus = Literal["in_progress", "paused", "finished"]
@@ -143,6 +116,20 @@ class MatchResumedData(BaseModel):
 class MatchResumedMessage(BaseModel):
     type: Literal["matchResumed"] = "matchResumed"
     data: MatchResumedData
+
+
+class SubstitutionMadeData(BaseModel):
+    match_id: str
+    tick: int
+    player_in_id: str
+    player_out_id: str
+    behavior_id: str | None = None
+    behavior_name: str | None = None
+
+
+class SubstitutionMadeMessage(BaseModel):
+    type: Literal["substitutionMade"] = "substitutionMade"
+    data: SubstitutionMadeData
 
 
 def match_started_message(
@@ -247,5 +234,22 @@ def match_resumed_message(
             match_id=match_id,
             tick=state.tick,
             resume_type=f"after_{pause}",
+        )
+    )
+
+
+def substitution_made_message(
+    match_id: str,
+    state: MatchState,
+    sub: PendingSubstitution,
+) -> SubstitutionMadeMessage:
+    return SubstitutionMadeMessage(
+        data=SubstitutionMadeData(
+            match_id=match_id,
+            tick=state.tick,
+            player_in_id=sub.player_in_id,
+            player_out_id=sub.player_out_id,
+            behavior_id=sub.behavior_id,
+            behavior_name=sub.behavior_name,
         )
     )

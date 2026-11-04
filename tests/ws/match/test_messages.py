@@ -10,8 +10,10 @@ from app.ws.match.messages import (
     match_started_message,
     match_state_message,
     pause_start_message,
+    substitution_made_message,
 )
 from app.ws.match.pauses import Pause
+from app.ws.match.substitutions import PendingSubstitution
 
 MATCH_ID = "partido-1"
 
@@ -206,3 +208,22 @@ def test_match_started_can_say_paused(match_state, match_info):
     msg = match_started_message(MATCH_ID, match_info, start, match_state, "paused")
 
     assert msg.data.status == "paused"
+
+
+def test_substitution_made_has_the_players_and_the_behavior(match_state):
+    sub = PendingSubstitution(
+        id="s1",
+        player_out_id="h1",
+        player_in_id="h4",
+        behavior_id="b-1",
+        behavior_name="Atacante",
+        behavior_code="def decide_action():\n    pass\n",
+        window=Pause.HALFTIME,
+    )
+
+    data = substitution_made_message(MATCH_ID, match_state, sub).data
+
+    assert data.player_out_id == "h1"
+    assert data.player_in_id == "h4"
+    assert data.behavior_id == "b-1"
+    assert data.behavior_name == "Atacante"
