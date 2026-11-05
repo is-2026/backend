@@ -336,6 +336,26 @@ async def test_list_leagues_empty(api, mocks):
     assert result == []
     mocks.league_repo.list_clubs_of_league.assert_not_awaited()
 
+async def test_list_my_leagues(api, mocks):
+    league = SimpleNamespace(
+        id=uuid.uuid4(),
+        name="Liga",
+        hashed_password=None,
+        max_clubs=5,
+        status="started",
+    )
+    clubs= [SimpleNamespace(id=uuid.uuid4()), SimpleNamespace(id=uuid.uuid4())]
+    mocks.league_repo.list_leagues_of_club.return_value = [league]
+    mocks.league_repo.list_clubs_of_league.return_value = clubs
+    
+    result = await api.list_my_leagues(CLUB)
+
+    assert len(result) == 1
+    assert result[0].id == league.id
+    assert result[0].max_clubs == 5
+    assert result[0].status == "started"
+    assert result[0].club_count == 2
+    mocks.league_repo.list_leagues_of_club.assert_awaited_once_with(CLUB.id)
 
 # tests de endpoint
 
@@ -631,6 +651,50 @@ async def test_endpoint_list_leagues_without_token_returns_401(client, session):
     assert r.status_code == 401
     assert "message" in r.json()
 
+# --- GET /club/leagues (ligas de mi club) ---
+MY_LEAGUES_URL = "/club/leagues"
+
+async def test_endpoint_list_my_leagues_returns_200(client, session, club):
+    await add_league(session, club, "Liga no iniciada", "not_started")
+    await add_league(session, club, "Liga iniciada", "started")
+    await add_league(session, club, "Liga cancelada", "cancelled")
+
+    r = await client.get(MY_LEAGUES_URL, headers=auth_header(club))
+
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 2
+    for league in data:
+        assert league["status"] != "cancelled"
+        assert league["club_count"] == 1
+
+async def test_endpoint_list_my_leagues_not_enrolled(client, session, club):
+    # liga creada por otro club, en la que mi club no está inscripto
+    other_user_id = uuid.uuid4()
+    other_club = SimpleNamespace(id=uuid.uuid4(), user_id=other_user_id)
+    session.add(UserDB(id=other_user_id, email="otro@prueba.com", hashed_password="hash"))
+    await session.flush()
+    session.add(
+        ClubDB(
+            id=other_club.id,
+            club_name="River Plate",
+            avatar_url="https://img.com/avatar.png",
+            user_id=other_user_id,
+        )
+    )
+    await session.commit()
+    await add_league(session, other_club, "Liga ajena", "started")
+
+    r = await client.get(MY_LEAGUES_URL, headers=auth_header(club))
+
+    assert r.status_code == 200
+    assert r.json() == []
+
+async def test_endpoint_list_my_leagues_without_token_returns_401(client, session):
+    r = await client.get(MY_LEAGUES_URL)
+
+    assert r.status_code == 401
+    assert "message" in r.json()
 
 async def test_join_league_public_endpoint(api, mocks):
     # configuramos la liga que vamos a obtener
