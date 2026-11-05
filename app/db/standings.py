@@ -26,6 +26,7 @@ class LeagueStandingsDB(Base):
     points: Mapped[int] = mapped_column(default=0)
     matches_played: Mapped[int] = mapped_column(default=0)
     won: Mapped[int] = mapped_column(default=0)
+    won_penalties: Mapped[int] = mapped_column(default=0)
     drawn: Mapped[int] = mapped_column(default=0)
     lost: Mapped[int] = mapped_column(default=0)
     goals_dif: Mapped[int] = mapped_column(default=0)
