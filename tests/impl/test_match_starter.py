@@ -7,9 +7,12 @@ from app.behaviors.defaults import DEFAULT_BEHAVIORS
 from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
 from app.db.friendly import FriendlyDB, FriendlyPlayerDB
+from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
 from app.db.match import MatchDB, MatchStatus
 from app.db.player import PlayerDB
+from app.db.standings import LeagueStandingsDB
 from app.db.user import UserDB
+from app.engine.constants import TICKS_PER_MINUTE
 from app.ws.match import starter as starter_module
 from app.ws.match.runner import live_matches, start_match
 from app.ws.match.starter import MatchStarter
@@ -150,3 +153,98 @@ async def test_saves_result_when_finished(session_factory, match_id, monkeypatch
 async def test_unknown_match_raises(session_factory):
     with pytest.raises(LookupError):
         await MatchStarter(session_factory).start(uuid.uuid4())
+
+
+@pytest.fixture
+async def league_match(session):
+    league_id, match_id = uuid.uuid4(), uuid.uuid4()
+    home, home_b, home_players = await make_club_with_squad(session, "local_liga")
+    away, away_b, away_players = await make_club_with_squad(session, "visita_liga")
+    session.add(
+        LeagueDB(
+            id=league_id,
+            name="Liga",
+            max_clubs=4,
+            match_duration_minutes=2,
+            status="started",
+            creator_club_id=home,
+        )
+    )
+    await session.flush()
+    for rank, (club, b, players) in enumerate(
+        ((home, home_b, home_players), (away, away_b, away_players)), start=1
+    ):
+        enrollment_id = uuid.uuid4()
+        session.add(
+            LeagueEnrollmentDB(id=enrollment_id, league_id=league_id, club_id=club)
+        )
+        session.add(
+            LeagueStandingsDB(league_id=league_id, club_id=club, rank=rank)
+        )
+        await session.flush()
+        session.add_all(
+            LeagueEnrollmentPlayerDB(
+                id=uuid.uuid4(),
+                enrollment_id=enrollment_id,
+                player_id=p.id,
+                is_starter=i < 3,
+                behavior_id=b if i < 3 else None,
+            )
+            for i, p in enumerate(players)
+        )
+    session.add(
+        MatchDB(
+            id=match_id,
+            home_club_id=home,
+            away_club_id=away,
+            league_id=league_id,
+            round_number=1,
+        )
+    )
+    await session.commit()
+    yield league_id, match_id, home, away
+    live_matches.pop(match_id, None)
+
+
+async def test_league_match_uses_league_duration_and_updates_standings(
+    session_factory, league_match, monkeypatch
+):
+    league_id, match_id, home, away = league_match
+    monkeypatch.setattr(
+        starter_module,
+        "start_match",
+        functools.partial(
+            start_match,
+            tick_interval=0,
+            start_delay=0,
+            cooling_break_duration=0,
+            halftime_duration=0,
+        ),
+    )
+    starter = MatchStarter(session_factory)
+
+    save_task = await starter.start(match_id)
+    live = live_matches[match_id]
+    assert live.state.total_ticks == 2 * TICKS_PER_MINUTE
+    await save_task
+
+    async with session_factory() as s:
+        match = await s.get(MatchDB, match_id)
+        home_standing = await s.get(LeagueStandingsDB, (league_id, home))
+        away_standing = await s.get(LeagueStandingsDB, (league_id, away))
+
+    assert match.status == MatchStatus.finished
+    assert (match.home_score, match.away_score) == (
+        live.state.home_score,
+        live.state.away_score,
+    )
+    assert home_standing.matches_played == 1
+    assert away_standing.matches_played == 1
+    assert (home_standing.goals_for, home_standing.goals_against) == (
+        live.state.home_score,
+        live.state.away_score,
+    )
+    assert (away_standing.goals_for, away_standing.goals_against) == (
+        live.state.away_score,
+        live.state.home_score,
+    )
