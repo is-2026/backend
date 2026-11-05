@@ -90,6 +90,13 @@ class FriendlyRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_club_names(self, club_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+        # una sola consulta para todos los clubes, en vez de una por amistoso
+        result = await self._session.execute(
+            select(ClubDB.id, ClubDB.club_name).where(ClubDB.id.in_(club_ids))
+        )
+        return dict(result.all())
+
     async def accept(
                     self,
                     friendly_id: uuid.UUID,
