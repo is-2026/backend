@@ -5,10 +5,11 @@ import uuid
 from app.db.club import ClubDB
 from app.db.match import MatchDB, MatchStatus
 from app.db.session import SessionLocal
-from app.engine.constants import FRIENDLY_TOTAL_TICKS, TRIANGLE_HOME
+from app.engine.constants import FRIENDLY_TOTAL_TICKS, TICKS_PER_MINUTE, TRIANGLE_HOME
 from app.engine.state import MatchState, PlayerState, Side
 from app.repositories.club_repository import ClubRepository
 from app.repositories.friendly_repository import FriendlyRepository, SquadMember
+from app.repositories.league_repository import LeagueRepository
 from app.repositories.match_repository import MatchRepository
 from app.ws.match.messages import ClubSummary, LineupPlayer, MatchInfo
 from app.ws.match.runner import LiveMatch, live_matches, start_match
@@ -36,7 +37,9 @@ def _player_state(member: SquadMember, side: Side) -> PlayerState:
 
 
 def build_match_state(
-    match: MatchDB, squad: list[SquadMember]
+    match: MatchDB,
+    squad: list[SquadMember],
+    total_ticks: int = FRIENDLY_TOTAL_TICKS,    #por defecto: duracion de un friendly
 ) -> tuple[MatchState, dict[str, str]]:
     """Arma el estado inicial del motor y codes = player_id -> código.
     Solo entran los titulares; su orden en `squad` decide la posición en la formación."""
@@ -55,7 +58,7 @@ def build_match_state(
         away_formation=TRIANGLE_HOME,  # el motor lo espeja
         players=[_player_state(m, Side.HOME) for m in home]
         + [_player_state(m, Side.AWAY) for m in away],
-        total_ticks=FRIENDLY_TOTAL_TICKS,
+        total_ticks=total_ticks,
     )
     codes = {str(m.player.id): m.behavior.code for m in starters}
     return state, codes
@@ -102,9 +105,9 @@ class MatchStarter:
         self._session_factory = session_factory
         self._tasks: set[asyncio.Task] = set()
 
-    async def start(self, match_id: uuid.UUID) -> None:
+    async def start(self, match_id: uuid.UUID) -> asyncio.Task | None:
         if match_id in live_matches:
-            return
+            return None
 
         async with self._session_factory() as session:
             match = await MatchRepository(session).get_by_id(match_id)
@@ -113,19 +116,44 @@ class MatchStarter:
             clubs = ClubRepository(session)
             home_club = await clubs.get_by_id(match.home_club_id)
             away_club = await clubs.get_by_id(match.away_club_id)
-            squad = await FriendlyRepository(session).get_squad_by_match(match_id)
 
-            state, codes = build_match_state(match, squad)
+            #es partido de liga
+            if match.league_id is not None:
+                leagues = LeagueRepository(session)
+                league = await leagues.get(match.league_id)
+                squad = await leagues.get_squad_by_match(match_id)
+                total_ticks = league.match_duration_minutes * TICKS_PER_MINUTE
+            else:
+                squad = await FriendlyRepository(session).get_squad_by_match(match_id)
+                total_ticks = FRIENDLY_TOTAL_TICKS
+
+            state, codes = build_match_state(match, squad, total_ticks=total_ticks)
             info = build_match_info(home_club, away_club, squad)
 
             live = start_match(match_id, state, codes, info)
             await MatchRepository(session).set_status(match_id, MatchStatus.in_progress)
 
-        task = asyncio.create_task(self._save_result(live))
+        task = asyncio.create_task(
+            self._save_result(
+                live,
+                league_id=match.league_id,
+                home_club_id=match.home_club_id,
+                away_club_id=match.away_club_id,
+            )
+        )
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+        #para una liga, se pueden esperar todas las tasks (matchs) antes de iniciar otra fecha
+        return task
 
-    async def _save_result(self, live: LiveMatch) -> None:
+    async def _save_result(
+        self,
+        live: LiveMatch,
+        *,
+        league_id: uuid.UUID | None = None,
+        home_club_id: uuid.UUID | None = None,
+        away_club_id: uuid.UUID | None = None,
+    ) -> None:
         """Espera a que termine el runner y guarda el resultado."""
         await live.task
         try:
@@ -133,6 +161,16 @@ class MatchStarter:
                 await MatchRepository(session).finish(
                     live.match_id, live.state.home_score, live.state.away_score
                 )
+
+                #es partido de liga
+                if league_id is not None:
+                    await LeagueRepository(session).update_standings(
+                        league_id,
+                        home_club_id,
+                        away_club_id,
+                        live.state.home_score,
+                        live.state.away_score,
+                    )
         except Exception:
             logger.exception("No se pudo guardar el resultado de %s", live.match_id)
 
