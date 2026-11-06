@@ -400,3 +400,63 @@ async def test_start_league_success(session, session_factory):
         assert partidos_por_fecha[1] == 2
         assert partidos_por_fecha[2] == 2
         assert partidos_por_fecha[3] == 2
+
+#Tests para el ranking
+
+# anota a un club en la tabla de una liga, con su puesto y sus puntos
+# dos clubes de la misma liga no pueden tener el mismo puesto
+async def add_standing(session, league_id, club_id, rank, **stats):
+    session.add(
+        LeagueStandingsDB(league_id=league_id, club_id=club_id, rank=rank, **stats)
+    )
+    await session.commit()
+
+
+# creamos un club que juega en dos ligas publicas y sumamos los puntos obtenidos en las dos
+async def test_list_ranking_totals_sums_public_leagues(session):
+    club = await make_club(session)
+    liga1 = await add_league(session, club, "Liga 1", "started")
+    liga2 = await add_league(session, club, "Liga 2", "finished")
+    await add_standing(session, liga1, club, 1, points=6, matches_played=2, won=2,
+                       goals_for=5, goals_against=1)
+    await add_standing(session, liga2, club, 1, points=3, matches_played=3, won=1,
+                       lost=2, goals_for=4, goals_against=6)
+
+    result = await LeagueRepository(session).list_ranking_totals()
+
+    assert len(result) == 1
+    assert result[0].points == 9  # 6 + 3
+    assert result[0].matches_played == 5  # 2 + 3
+    assert result[0].goals_for == 9  # 5 + 4
+    assert result[0].goals_against == 7  # 1 + 6
+
+
+# creamos una liga privada, no deberia contar
+async def test_list_ranking_totals_ignores_private_leagues(session):
+    club = await make_club(session)
+    liga = await add_league(session, club, "Privada", "started", password="hash")
+    await add_standing(session, liga, club, 1, points=9, matches_played=3)
+
+    assert await LeagueRepository(session).list_ranking_totals() == []
+
+
+# creamos una liga que no arranco, no deberia contar
+async def test_list_ranking_totals_ignores_not_started_leagues(session):
+    club = await make_club(session)
+    liga = await add_league(session, club, "Liga", "not_started")
+    await add_standing(session, liga, club, 1, points=3, matches_played=1)
+
+    assert await LeagueRepository(session).list_ranking_totals() == []
+
+
+# creamos dos clubes en la liga pero uno no jugo, ese no aparece
+async def test_list_ranking_totals_excludes_clubs_without_matches(session):
+    con_partidos = await make_club(session)
+    sin_partidos = await make_club(session)
+    liga = await add_league(session, con_partidos, "Liga", "started")
+    await add_standing(session, liga, con_partidos, 1, points=3, matches_played=1)
+    await add_standing(session, liga, sin_partidos, 2)
+
+    result = await LeagueRepository(session).list_ranking_totals()
+
+    assert [t.club_id for t in result] == [con_partidos]
