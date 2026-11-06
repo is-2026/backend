@@ -1,11 +1,14 @@
 # coding: utf-8
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from typing import Dict, List  # noqa: F401
 import importlib
 import pkgutil
 
 from app.apis.ranking_api_base import BaseRankingApi
 import app.impl
+from app.db.session import get_session
 
 from fastapi import (  # noqa: F401
     APIRouter,
@@ -48,9 +51,9 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
 async def get_ranking(
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
-    ),
+    ), session: AsyncSession = Depends(get_session)
 ) -> List[RankingItem]:
     """Calculado a partir de los partidos jugados en instancias públicas (ligas públicas y amistosos)."""
     if not BaseRankingApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseRankingApi.subclasses[0]().get_ranking()
+    return await BaseRankingApi.subclasses[0](session).get_ranking()

@@ -30,7 +30,7 @@ class SquadPlayerData:
     behavior_id: uuid.UUID | None = None
 
 @dataclass
-class ClubTotals:
+class ClubRankingTotals:
     club_id: uuid.UUID
     club_name: str
     avatar_url: str
@@ -245,9 +245,9 @@ class LeagueRepository:
 
         await self._session.commit()
 
-    # suma por club las filas de la tabla de posiciones de las ligas públicas
+    # suma por club las filas de la tabla de posiciones de las ligas publicas
     # en curso o terminadas. solo clubes con al menos un partido jugado
-    async def list_ranking_totals(self) -> list[ClubTotals]:
+    async def list_ranking_totals(self) -> list[ClubRankingTotals]:
         result = await self._session.execute(
             select(
                 ClubDB.id,
