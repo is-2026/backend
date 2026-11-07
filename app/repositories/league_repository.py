@@ -230,3 +230,10 @@ class LeagueRepository:
             raise LeagueStartFailure from e
 
         await self._session.commit()
+
+    async def cancel_league(self, league_id: uuid.UUID) -> None:
+        # cambiamos el estado de la liga a cancelada
+        league = await self.get(league_id)
+        league.status = "cancelled"
+        await self._session.commit()
+
