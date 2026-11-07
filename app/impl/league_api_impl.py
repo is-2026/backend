@@ -326,3 +326,32 @@ class LeaguesApiImpl(BaseLeaguesApi):
             status="started",  # ya sabemos que arranco
             registered_clubs=registered,
         )
+
+    async def cancel_league(
+        self,
+        league_id: uuid.UUID,
+        club: ClubDB,
+    ) -> None:
+        repo = LeagueRepository(self._session)
+
+        # verificar si la liga existe (404)
+        league = await repo.get(league_id)
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga indicada no existe")
+        
+        # verificar que el club que llama sea el creador (403)
+        if league.creator_club_id != club.id:
+            raise HTTPException(status_code=403, detail="Solo el creador de la liga puede cancelarla")
+        
+        # verificar que la liga no este iniciada/terminada/cancelada (409)
+        if league.status != "not_started":
+            raise HTTPException(status_code=409, detail="La liga ya se encuentra iniciada, finalizada o cancelada")
+        await repo.cancel_league(league_id)
+
+        # avisamos a los conectados al lobby y cerramos el canal
+        event_league_cancelled = {
+            "type": "LeagueCancelled",
+            "payload": {"league_id": str(league_id)},
+        }
+        await league_lobby_connection.broadcast(league_id, event_league_cancelled)
+        await league_lobby_connection.close_all(league_id)
