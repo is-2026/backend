@@ -239,6 +239,8 @@ class PlayerBrain:
             return None
         try:
             self._decide()
+        except MemoryError:
+            raise  # para que no me lo coma el except Exception
         except Exception:
             logger.exception(
                 "El comportamiento del jugador %s falló en decide_action()",

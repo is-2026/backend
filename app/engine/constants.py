@@ -40,3 +40,20 @@ SOCIAL_DISTANCING = 1.0
 
 # Cantidad de pasadas a la hora de separar jugadores
 SEPARATION_PASSES = 3
+
+
+# Para la sandbox
+# Cuanto tiempo le voy a dar al decide_action()
+# si hay 6 comportamientos en cancha y tengo ticks de 100ms
+# 6 x 10ms = 60ms me quedan 40ms de margen
+CALL_TIMEOUT = 0.01  # (segundos)
+
+# Cuanto puede tardar en cargarse el código (segundos)
+CODE_LOAD_TIMEOUT = 0.1
+
+# Memoria del proceso hijo entero
+MEMORY_LIMIT_MB = 256
+
+# Cuantos timeouts seguidos aguanta un jugador antes de quedar afuera por el resto del
+# partido
+MAX_CONSECUTIVE_TIMEOUTS = 3
