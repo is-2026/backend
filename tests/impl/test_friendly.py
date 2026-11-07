@@ -69,7 +69,7 @@ def mocks(monkeypatch):
 @pytest.fixture
 def api(mocks): #lo que vamos a testear
     impl = FriendliesApiImpl(session=MagicMock(), lobby_manager=mocks.lobby)
-    impl._schedule_start = MagicMock()  # schedule_start es lo que crea el timer de 30s, como no lo queremos ponemos un mock
+    impl._schedule_start = MagicMock()  # schedule_start es lo que crea el timer del lobby, como no lo queremos ponemos un mock
     return impl
  
  
