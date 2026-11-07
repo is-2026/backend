@@ -230,6 +230,7 @@ async def test_get_league_public(api, mocks):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        creator_club_id=CLUB.id,
     )
 
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
@@ -242,6 +243,7 @@ async def test_get_league_public(api, mocks):
     assert result.name == "LPF chiqui Mafia"
     assert result.is_private is False
     assert result.status == "not_started"
+    assert result.creator_club_id == CLUB.id
     assert result.registered_clubs[0].club_name == "River Plate"
 
     mocks.league_repo.get.assert_awaited_once_with(league.id)  # busco la liga
@@ -254,6 +256,7 @@ async def test_get_league_private(api, mocks):
         hashed_password="password",
         max_clubs=5,
         status="not_started",
+        creator_club_id=CLUB.id,
     )
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
     mocks.league_repo.get.return_value = league

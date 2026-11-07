@@ -153,6 +153,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             is_private=league.hashed_password is not None,
             max_clubs=league.max_clubs,
             status=league.status,
+            creator_club_id=league.creator_club_id,
             registered_clubs=registered,
         )
 
