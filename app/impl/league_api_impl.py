@@ -19,6 +19,7 @@ from app.repositories.league_repository import (
 from app.repositories.player_repository import PlayerRepository
 from app.db.behavior import BehaviorDB
 from app.security.passwords import hash_password, verify_password
+from app.ws.league_scheduler import LeagueScheduler
 from app.ws.lobby_league import league_lobby_connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,8 +51,13 @@ def _validate_league(data: CreateLeagueInput) -> None:
 
 
 class LeaguesApiImpl(BaseLeaguesApi):
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        league_scheduler: LeagueScheduler | None = None,
+    ) -> None:
         self._session = session
+        self._league_scheduler = league_scheduler
 
     async def create_league(
         self, create_league_input: CreateLeagueInput, club_id: ClubDB
@@ -312,6 +318,9 @@ class LeaguesApiImpl(BaseLeaguesApi):
             "payload": {"league_id": str(league_id)},
         }
         await league_lobby_connection.broadcast(league_id, event_payload)
+        # llama al schedule de la liga para iniciar los partidos
+        if self._league_scheduler is not None:
+            self._league_scheduler.schedule(league_id)
 
         # devolvemos el detalle de la liga actualizada
         registered = [
