@@ -79,6 +79,7 @@ def mocks(monkeypatch):
     mock.verify_password = AsyncMock(return_value=True)
     mock.lobby_connection = MagicMock()
     mock.lobby_connection.broadcast = AsyncMock()
+    mock.league_scheduler = MagicMock()
 
     monkeypatch.setattr(
         league_api_impl, "PlayerRepository", MagicMock(return_value=mock.player_repo)
@@ -100,7 +101,7 @@ def mocks(monkeypatch):
 def api(
     mocks,
 ):  # Aca directamente mockeo toda la clase, porque la voy a necesitar para los tests.
-    return LeaguesApiImpl(mocks.session)
+    return LeaguesApiImpl(mocks.session, mocks.league_scheduler)
 
 
 async def test_create_league_public(api, mocks):
@@ -888,6 +889,7 @@ async def test_start_league_success(api, mocks):
         "payload": {"league_id": str(league_id)},
     }
     mocks.lobby_connection.broadcast.assert_awaited_once_with(league_id, expected_event)
+    mocks.league_scheduler.schedule.assert_called_once_with(league_id)
 
     # verificamos que el LeagueDetail devuelto tenga el estado en "started"
     assert result.status == "started"
@@ -986,3 +988,4 @@ async def test_start_league_repo_failure_returns_500(api, mocks):
 
     # verificamos que si falla la base de datos, NUNCA se emite el evento ws
     mocks.lobby_connection.broadcast.assert_not_awaited()
+    mocks.league_scheduler.schedule.assert_not_called()
