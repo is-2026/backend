@@ -350,8 +350,8 @@ class LeaguesApiImpl(BaseLeaguesApi):
 
         # avisamos a los conectados al lobby y cerramos el canal
         event_league_cancelled = {
-            "type": "LeagueCancelled",
-            "payload": {"league_id": str(league_id)},
+            "type": "leagueCancelled",
+            "data": {"league_id": str(league_id)},
         }
         await league_lobby_connection.broadcast(league_id, event_league_cancelled)
         await league_lobby_connection.close_all(league_id)

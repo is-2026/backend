@@ -1003,8 +1003,8 @@ async def test_cancel_league_success(api, mocks):
 
     # verificamos que se emitio el evento y se cerro el canal
     expected_event = {
-        "type": "LeagueCancelled",
-        "payload": {"league_id": str(league_id)},
+        "type": "leagueCancelled",
+        "data": {"league_id": str(league_id)},
     }
     mocks.lobby_connection.broadcast.assert_awaited_once_with(league_id, expected_event)
     mocks.lobby_connection.close_all.assert_awaited_once_with(league_id)
