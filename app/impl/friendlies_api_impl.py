@@ -18,7 +18,9 @@ from app.ws.lobby_friendly import friendly_start_times
 
 
 INTERNAL_ERROR = 1011
-LOBBY_WINDOW_SECONDS = 30
+# pausa corta antes de friendlyStart: no es 0 porque el que se une recién se conecta
+# al lobby después de la respuesta del join, y sin pausa no recibiría friendlyStart
+LOBBY_WINDOW_SECONDS = 3
 _background_tasks : set[asyncio.Task] = set()  #guarda la referencia a los timers, se agrega al set para que asyncio no lo borre antes
 
 
@@ -179,7 +181,7 @@ class FriendliesApiImpl(BaseFriendliesApi):
             match_id= match.id
         )
 
-    def _schedule_start(  #Lanza la pantalla de 30s en 2do plano y vuelve para crear el partido, y que no espere 30s el front para la respuesta
+    def _schedule_start(  #Lanza la espera del lobby en 2do plano y vuelve, para que el front no espere esa pausa para la respuesta
                         self, 
                         friendly_id : uuid.UUID, 
                         match_id: uuid.UUID) -> None:
