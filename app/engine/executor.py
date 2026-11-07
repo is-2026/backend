@@ -2,13 +2,11 @@ import logging
 
 from app.engine.actions import Action
 from app.engine.behavior_exec import (
-    PlayerBrain,
-    compile_behavior,
     create_brains,
     decide_actions,
+    load_brain,
 )
 from app.engine.state import MatchState
-from app.engine.validation import InvalidBehaviorCode
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +26,10 @@ class BehaviorExecutor:
         if player is None:
             logger.warning("No existe el jugador %s", player_id)
             return
-
-        try:
-            compiled_code = compile_behavior(code, player.id)
-        except InvalidBehaviorCode:
-            logger.exception("El comportamiento del jugador %s no compila", player.id)
-            return  # si no compila que quede con el brain viejo
-        brain = PlayerBrain(player, compiled_code)
-        self._brains[player.id] = brain
+        brain = load_brain(player, code)
+        # si no compila que quede con el brain viejo
+        if brain is not None:
+            self._brains[player.id] = brain
 
     def close(self):
         """Es para ticket ING-172, ahora no hago nada"""
