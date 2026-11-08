@@ -10,6 +10,7 @@ from app.apis.match_api_base import BaseMatchApi
 from app.db.match import MatchDB
 from app.models.match import Match
 from app.models.substitution import Substitution
+from app.models.change_live_behavior_request import ChangeLiveBehaviorRequest
 from app.repositories.behavior_repository import BehaviorRepository
 from app.repositories.match_repository import MatchRepository
 from app.ws.connection_manager import ConnectionManager
@@ -26,6 +27,7 @@ from app.ws.match.substitutions import (
     substitution_window,
     validate_players,
 )
+from app.ws.match.live_behavior import validate_player_on_field, PlayerNotOnField
 
 
 class MatchApiImpl(BaseMatchApi):
@@ -51,9 +53,40 @@ class MatchApiImpl(BaseMatchApi):
         raise NotImplementedError
 
     async def change_live_behavior(
-        self, match_id, player_id, change_live_behavior_request
+        self,
+        match_id: uuid.UUID,
+        player_id: uuid.UUID,
+        change_live_behavior_request: ChangeLiveBehaviorRequest,
+        club_id: uuid.UUID,
     ) -> None:
-        raise NotImplementedError
+        live = live_matches.get(match_id)
+        if live is None:
+            raise HTTPException(status_code=404, detail="El partido no está en juego")
+
+        team_id = str(club_id)
+        try:
+            get_side(team_id, live.info)
+        except ClubNotInMatch as e:
+            raise HTTPException(
+                status_code=403, detail="El club no juega este partido"
+            ) from e
+
+        if live.phase == Phase.PENALTIES:
+            raise HTTPException(
+                status_code=409, detail="El partido se encuentra en penales"
+            )
+        player = str(player_id)
+
+        try:
+            validate_player_on_field(live.state, live.info, team_id, player)
+        except PlayerNotOnField as exc_info:
+            raise HTTPException(status_code=404, detail=str(exc_info)) from exc_info
+
+        behavior = await BehaviorRepository(self._session).get_id_and_club(
+            change_live_behavior_request.behavior_id, club_id
+        )
+        if behavior is None or behavior.kind != "player":
+            raise HTTPException(status_code=400, detail="El comportamiento no existe")
 
     async def schedule_substitution(
         self, match_id, schedule_substitution_input, club_id
@@ -75,10 +108,6 @@ class MatchApiImpl(BaseMatchApi):
         )
         if behavior is None or behavior.kind != "player":
             raise HTTPException(status_code=400, detail="El comportamiento no existe")
-
-        if match_id not in live_matches:
-            # terminó mientras fuimos a buscar el behavior a la db
-            raise HTTPException(status_code=404, detail="El partido no está en juego")
 
         player_out_id = str(schedule_substitution_input.player_out_id)
         player_in_id = str(schedule_substitution_input.player_in_id)
