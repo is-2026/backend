@@ -1,7 +1,8 @@
 import pytest
 
 from app.engine.constants import FIELD_HALF_LENGTH, KICKER_FORMATION, PENALTY_TICKS
-from app.engine.penalties import penalty_state
+from app.engine.events import GoalEvent
+from app.engine.penalties import kick_scored, kick_stopped, penalty_state
 from app.engine.state import Side
 from tests.engine.conftest import brain_with_snapshot, make_player
 
@@ -70,3 +71,58 @@ def test_penalty_state_score_is_penalty_shootout_score():
     assert brain_with_snapshot(state, "kicker").score() == (3, 2)
     assert brain_with_snapshot(state, "goalie").score() == (2, 3)
 
+
+# --- kick_scored ---
+def test_kick_scored_without_goal():
+    assert not kick_scored([])
+
+
+def test_kick_scored_with_goal():
+    goal = GoalEvent(tick=30, player_id="kicker", team_id="home-club", minute=0)
+    assert kick_scored([goal])
+
+
+# --- kick_stopped ---
+def _toward_goal(kicker_side, x):
+    """Pasa una x vista desde el pateador (ataca hacia +x) a la x absoluta."""
+    return x if kicker_side == Side.HOME else -x
+
+
+@pytest.mark.parametrize("kicker_side", [Side.HOME, Side.AWAY])
+def test_kick_stopped_fresh_state(kicker_side):
+    # la pelota arranca justo en la mitad, no cuenta como despeje
+    state = _penalty(kicker_side)
+    assert not kick_stopped(state, _find(state, "goalie"))
+
+
+@pytest.mark.parametrize("kicker_side", [Side.HOME, Side.AWAY])
+def test_kick_stopped_goalie_touched_ball(kicker_side):
+    state = _penalty(kicker_side)
+    state.ball.last_touch_id = "goalie"
+    assert kick_stopped(state, _find(state, "goalie"))
+
+
+@pytest.mark.parametrize("kicker_side", [Side.HOME, Side.AWAY])
+def test_kick_stopped_kicker_attacking(kicker_side):
+    # el pateador la llevó hacia el arco, el penal sigue
+    state = _penalty(kicker_side)
+    state.ball.last_touch_id = "kicker"
+    state.ball.x = _toward_goal(kicker_side, 8.0)
+    assert not kick_stopped(state, _find(state, "goalie"))
+
+
+@pytest.mark.parametrize("kicker_side", [Side.HOME, Side.AWAY])
+def test_kick_stopped_ball_back_in_kicker_half(kicker_side):
+    state = _penalty(kicker_side)
+    state.ball.last_touch_id = "kicker"
+    state.ball.x = _toward_goal(kicker_side, -1.0)
+    assert kick_stopped(state, _find(state, "goalie"))
+
+
+@pytest.mark.parametrize(
+    "tick, expected", [(PENALTY_TICKS - 1, False), (PENALTY_TICKS, True)]
+)
+def test_kick_stopped_time_up(tick, expected):
+    state = _penalty(Side.HOME)
+    state.tick = tick
+    assert kick_stopped(state, _find(state, "goalie")) == expected
