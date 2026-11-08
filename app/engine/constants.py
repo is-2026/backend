@@ -40,3 +40,18 @@ SOCIAL_DISTANCING = 1.0
 
 # Cantidad de pasadas a la hora de separar jugadores
 SEPARATION_PASSES = 3
+
+# Cuánto dura un penal
+PENALTY_TICKS = 80
+
+PENALTIES_PER_TEAM = 5
+
+# Penales totales (incl. los de muerte súbita)
+MAX_PENALTIES = 20
+
+KICKER_FORMATION = ((-0.5, 0.0), (-0.5, 0.0), (-0.5, 0.0))
+GOALIE_FORMATION = (
+    (-FIELD_HALF_LENGTH, 0.0),
+    (-FIELD_HALF_LENGTH, 0.0),
+    (-FIELD_HALF_LENGTH, 0.0),
+)
