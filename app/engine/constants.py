@@ -57,3 +57,8 @@ MEMORY_LIMIT_MB = 256
 # Cuantos timeouts seguidos aguanta un jugador antes de quedar afuera por el resto del
 # partido
 MAX_CONSECUTIVE_TIMEOUTS = 3
+
+# Del padre de sandbox
+TICK_DEADLINE = 0.25  # cuánto espera el padre en cada tick.
+STARTUP_DEADLINE = 2.0  # el primer decide incluye el arranque del hijo
+CLOSE_TIMEOUT = 1.0  # cuanto espera para el join
