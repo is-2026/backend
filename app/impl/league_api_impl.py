@@ -9,6 +9,7 @@ from app.db.session import SessionLocal
 from app.models.join_league_input import JoinLeagueInput
 from app.models.create_league_input import CreateLeagueInput
 from app.models.league_detail import LeagueDetail
+from app.models.league_summary import LeagueSummary
 from app.repositories.league_repository import (
     LeagueRepository,
     SquadPlayerData,
@@ -128,6 +129,26 @@ class LeaguesApiImpl(BaseLeaguesApi):
                     max_clubs=league.max_clubs,
                     status=league.status,
                     registered_clubs=registered,
+                )
+            )
+        return result
+    
+    async def list_my_leagues(self, club_id: uuid.UUID) -> list[LeagueSummary]:
+        repo = LeagueRepository(self._session)
+        leagues = await repo.list_leagues_of_club(club_id)
+
+        result = []
+        for league in leagues:
+            clubs = await repo.list_clubs_of_league(league.id)
+
+            result.append(
+                LeagueSummary(
+                    id=league.id,
+                    name=league.name,
+                    is_private=league.hashed_password is not None,
+                    max_clubs=league.max_clubs,
+                    status=league.status,
+                    club_count=len(clubs),
                 )
             )
         return result

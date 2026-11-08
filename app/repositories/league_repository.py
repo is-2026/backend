@@ -129,7 +129,19 @@ class LeagueRepository:
             club = await self._session.get(ClubDB, enrollment.club_id)
             clubs.append(club)
         return clubs
-
+    
+    async def list_leagues_of_club(self, club_id: uuid.UUID) -> list[LeagueDB]:
+        # primero las inscripciones del club. después busco la liga de cada una
+        result = await self._session.execute(
+            select(LeagueEnrollmentDB).where(LeagueEnrollmentDB.club_id == club_id)
+        )
+        leagues = []
+        for enrollment in result.scalars().all():
+            league = await self._session.get(LeagueDB, enrollment.league_id)
+            if league.status != "cancelled":
+                leagues.append(league)
+        return leagues
+        
     async def get(
         self, league_id: uuid.UUID
     ) -> LeagueDB | None:  # Si no encuetro la liga devuelvo None

@@ -118,11 +118,13 @@ async def create_league(
 )
 async def list_my_leagues(
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
 ) -> List[LeagueSummary]:
     """Identifica al club mediante el token de sesión. Devuelve las ligas en las que el club está inscripto."""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().list_my_leagues()
+    return await BaseLeaguesApi.subclasses[0](session).list_my_leagues(club.id)
 
 
 @router.get(
