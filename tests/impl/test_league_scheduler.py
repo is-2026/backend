@@ -257,3 +257,56 @@ async def test_league_scheduler_plays_all_rounds_and_finishes_league(
         )
     finally:
         live_matches.clear()
+
+
+async def test_league_scheduler_emits_ws_notifications_and_closes_lobby(
+    session, session_factory
+):
+    league_id, _ = await make_started_league(session, club_count=4)
+
+    events: list[tuple[str, uuid.UUID, dict | int]] = []
+
+    class FakeLobby:
+        async def broadcast(self, channel_id: uuid.UUID, message: dict) -> None:
+            events.append(("broadcast", channel_id, message))
+
+        async def close_all(self, channel_id: uuid.UUID, code: int = 1000) -> None:
+            events.append(("close_all", channel_id, code))
+
+    class FakeStarter:
+        async def start(self, match_id: uuid.UUID) -> asyncio.Task:
+            async def _finish():
+                pass
+
+            return asyncio.create_task(_finish())
+
+    scheduler = LeagueScheduler(
+        session_factory=session_factory,
+        starter=FakeStarter(),
+        lobby=FakeLobby(),
+        window_seconds=0,
+    )
+
+    await scheduler.schedule(league_id)
+
+    expected_updated = {
+        "type": "leagueUpdated",
+        "data": {"league_id": str(league_id)},
+    }
+    expected_finished = {
+        "type": "leagueFinished",
+        "data": {"league_id": str(league_id)},
+    }
+
+    # Verifico que se hayan enviado todos los eventos:
+    # 3 fechas, 2 partidos por fecha -> por cada fecha:
+    # 1 leagueUpdated (inicio espera) + 2 leagueUpdated (inicio partidos) + 2 leagueUpdated (fin partidos) = 5 por fecha -> 15 en total
+    # + 1 leagueFinished + 1 close_all(1000)
+    assert len(events) == 17
+    for kind, channel_id, payload in events[:15]:
+        assert kind == "broadcast"
+        assert channel_id == league_id
+        assert payload == expected_updated
+
+    assert events[15] == ("broadcast", league_id, expected_finished)
+    assert events[16] == ("close_all", league_id, 1000)
