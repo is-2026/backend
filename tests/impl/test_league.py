@@ -348,7 +348,7 @@ async def test_list_my_leagues(api, mocks):
     mocks.league_repo.list_leagues_of_club.return_value = [league]
     mocks.league_repo.list_clubs_of_league.return_value = clubs
     
-    result = await api.list_my_leagues(CLUB)
+    result = await api.list_my_leagues(CLUB.id)
 
     assert len(result) == 1
     assert result[0].id == league.id

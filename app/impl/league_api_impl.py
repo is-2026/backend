@@ -133,9 +133,9 @@ class LeaguesApiImpl(BaseLeaguesApi):
             )
         return result
     
-    async def list_my_leagues(self, club: ClubDB) -> list[LeagueSummary]:
+    async def list_my_leagues(self, club_id: uuid.UUID) -> list[LeagueSummary]:
         repo = LeagueRepository(self._session)
-        leagues = await repo.list_leagues_of_club(club.id)
+        leagues = await repo.list_leagues_of_club(club_id)
 
         result = []
         for league in leagues:
