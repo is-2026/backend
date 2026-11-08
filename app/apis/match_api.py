@@ -124,6 +124,10 @@ async def set_lineup(
             "model": Error,
             "description": "El partido o el jugador indicado no existen",
         },
+        409: {
+            "model": Error,
+            "description": "El partido se encuentra en penales"
+        }
     },
     tags=["Match"],
     summary="Cambiar comportamiento en vivo",
