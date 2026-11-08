@@ -58,6 +58,13 @@ class BehaviorValidator(ast.NodeVisitor):
             )
         self.generic_visit(node)
 
+    def visit_ExceptHandler(self, node):
+        if node.type is None:  # except: sin tipo
+            raise InvalidBehaviorCode(
+                f'Línea {node.lineno}: usá "except Exception:" en vez de "except:" solo'
+            )
+        self.generic_visit(node)
+
 
 def _check_length(code: str) -> None:
     if len(code) > MAX_CODE_LENGTH:

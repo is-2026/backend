@@ -1,3 +1,5 @@
+from textwrap import dedent
+
 import pytest
 
 from app.behaviors.defaults import DEFAULT_BEHAVIORS
@@ -129,3 +131,33 @@ def test_coach_needs_decide_coach():
 
     with pytest.raises(InvalidBehaviorCode):
         validate_behavior_code(VALID, "coach")
+
+
+# --- except ---
+def test_bare_except_is_rejected():
+    code = dedent(
+        """\
+        def decide_action():
+            try:
+                x = 1
+            except:
+                pass
+        """
+    )
+    with pytest.raises(InvalidBehaviorCode) as exc:
+        validate_behavior_code(code, "player")
+
+    assert "Línea 4" in str(exc.value)
+
+
+def test_except_exception_is_accepted():
+    code = dedent(
+        """\
+        def decide_action():
+            try:
+                x = 1
+            except Exception:
+                pass
+        """
+    )
+    validate_behavior_code(code, "player")
