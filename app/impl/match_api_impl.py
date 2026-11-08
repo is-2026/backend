@@ -14,7 +14,7 @@ from app.models.change_live_behavior_request import ChangeLiveBehaviorRequest
 from app.repositories.behavior_repository import BehaviorRepository
 from app.repositories.match_repository import MatchRepository
 from app.ws.connection_manager import ConnectionManager
-from app.ws.match.runner import LiveMatch, Phase, live_matches
+from app.ws.match.runner import LiveMatch, Phase, live_matches, match_connections
 from app.ws.match.substitutions import (
     ClubNotInMatch,
     InvalidSubstitution,
@@ -27,8 +27,8 @@ from app.ws.match.substitutions import (
     substitution_window,
     validate_players,
 )
-from app.ws.match.live_behavior import validate_player_on_field, PlayerNotOnField
-
+from app.ws.match.live_behavior import validate_player_on_field, PlayerNotOnField, update_info_match
+from app.ws.match.messages import behavior_changed_message
 
 class MatchApiImpl(BaseMatchApi):
     def __init__(self, session: AsyncSession):
@@ -88,6 +88,13 @@ class MatchApiImpl(BaseMatchApi):
         if behavior is None or behavior.kind != "player":
             raise HTTPException(status_code=400, detail="El comportamiento no existe")
 
+        live.executor.set_behavior(player, behavior.code)
+        update_info_match(live.info, team_id, player, str(behavior.id), behavior.name)
+
+        message = behavior_changed_message(str(match_id), live.state, player ,str(behavior.id), behavior.name ) #armo el mensaje
+        await match_connections.broadcast(live.match_id, message.model_dump(mode = "json")) #mando el mensaje a todos los clientes conectados al canal
+        #convierto el modelo en un dict para poder dsp pasarlo a json, porque broadcast recibe un dict no un modelo.
+    
     async def schedule_substitution(
         self, match_id, schedule_substitution_input, club_id
     ) -> Substitution:
