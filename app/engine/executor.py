@@ -53,9 +53,8 @@ class BehaviorExecutor:
             self._kill()
 
     def close(self):
-        """Es para ticket ING-172, ahora no hago nada"""
         if self._dead:
-            return
+            return  # no hago nada porque ya está muerto
         try:
             self._conn.send(("close",))
         except OSError:

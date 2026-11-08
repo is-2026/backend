@@ -1,10 +1,13 @@
 import logging
+import multiprocessing
+import time
 from textwrap import dedent
 
 import pytest
 
 from app.engine.actions import Move
 from app.engine.behavior_exec import create_brains, decide_actions
+from app.engine.constants import STARTUP_DEADLINE, TICK_DEADLINE
 from app.engine.executor import BehaviorExecutor
 from tests.engine.conftest import same_code_for_all
 
@@ -17,6 +20,19 @@ CHASE_BALL = """
 
 GO_RIGHT = """
     def decide_action():
+        move(1, 0, 100)
+"""
+
+HANG_FROM_2ND = """
+    calls = 0
+    def decide_action():
+        global calls
+        calls += 1
+        while calls >= 2:
+            try:
+                while True: pass
+            except:
+                pass
         move(1, 0, 100)
 """
 
@@ -77,3 +93,42 @@ async def test_set_behavior_of_unknown_player_does_nothing(
 
     assert await executor.decide(state) == {"h1": Move(1.0, 0.0, 100.0)}
     assert "No existe el jugador jugador inexistente" in caplog.text
+
+
+async def test_executor_close(state, make_executor):
+    executor = make_executor(state, {"h1": dedent(GO_RIGHT)})
+
+    await executor.decide(state)
+
+    executor.close()
+    executor.close()  # la segunda no tiene que tirar error
+
+    assert executor._proc not in multiprocessing.active_children()
+    assert await executor.decide(state) == {}  # cerradoo
+
+
+async def test_child_process_hang(state, make_executor):
+    executor = make_executor(state, {"h1": dedent(HANG_FROM_2ND)})
+
+    assert await executor.decide(state) == {"h1": Move(1.0, 0.0, 100.0)}
+
+    start = time.monotonic()
+    assert await executor.decide(state) == {}
+    elapsed = time.monotonic() - start
+    assert TICK_DEADLINE <= elapsed < STARTUP_DEADLINE
+    assert not executor._proc.is_alive()  # el padre lo mató
+
+    start = time.monotonic()
+    assert await executor.decide(state) == {}
+    elapsed = time.monotonic() - start
+    assert elapsed <= 0.05  # como ya se murio hace rato responde al toque
+
+
+async def test_dead_child_process(state, make_executor):
+    executor = make_executor(state, {"h1": dedent(GO_RIGHT)})
+
+    executor._proc.kill()
+    executor._proc.join()
+
+    assert await executor.decide(state) == {}
+    executor.set_behavior("h1", dedent(GO_RIGHT))

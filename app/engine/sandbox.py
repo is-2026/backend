@@ -130,7 +130,9 @@ def start_worker(
     """Devuelve (proceso, conn_padre)"""
     ctx = multiprocessing.get_context("spawn")
     parent_conn, child_conn = ctx.Pipe()
-    proc = ctx.Process(target=_worker_main, args=(child_conn, players, codes), daemon=True)
+    proc = ctx.Process(
+        target=_worker_main, args=(child_conn, players, codes), daemon=True
+    )
     proc.start()
     # el padre nunca va a usar este fd, el hijo tiene una copia propia, lo cierro
     child_conn.close()
