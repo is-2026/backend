@@ -29,11 +29,8 @@ HANG_FROM_2ND = """
     def decide_action():
         global calls
         calls += 1
-        while calls >= 2:
-            try:
-                while True: pass
-            except:
-                pass
+        if calls >= 2:
+            sum(range(10**12))  # corre en C: la alarma del hijo no lo puede cortar
         move(1, 0, 100)
 """
 
