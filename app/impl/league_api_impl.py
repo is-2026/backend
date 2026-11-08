@@ -10,6 +10,7 @@ from app.models.join_league_input import JoinLeagueInput
 from app.models.create_league_input import CreateLeagueInput
 from app.models.league_detail import LeagueDetail
 from app.models.league_summary import LeagueSummary
+from app.models.standings_item import StandingsItem
 from app.repositories.league_repository import (
     LeagueRepository,
     SquadPlayerData,
@@ -356,3 +357,34 @@ class LeaguesApiImpl(BaseLeaguesApi):
             status="started",  # ya sabemos que arranco
             registered_clubs=registered,
         )
+
+    async def get_standings(self, league_id: uuid.UUID) -> list[StandingsItem]:
+        repo = LeagueRepository(self._session)
+        league = await repo.get(league_id)
+
+        # manejamos errores
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga indicada no existe")
+        if league.status in ("not_started", "cancelled"):
+            raise HTTPException(
+                status_code=409, detail="La liga no esta iniciada"
+            )
+        # traemos los datos desde la bd (el repo ya los manda ordenados)
+        rows = await repo.get_standings(league_id)
+        # mapeamos al modelo StandingsItem
+        return [
+            StandingsItem(
+                club_id=standing.club_id,
+                club_name=club_name,
+                points=standing.points,
+                rank=standing.rank,
+                matches_played=standing.matches_played,
+                won=standing.won,
+                drawn=standing.drawn,
+                lost=standing.lost,
+                goals_for=standing.goals_for,
+                goals_against=standing.goals_against,
+                goals_dif=standing.goals_dif,
+            )
+            for standing, club_name in rows
+        ]
