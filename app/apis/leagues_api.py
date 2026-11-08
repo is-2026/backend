@@ -36,7 +36,8 @@ from app.models.extra_models import TokenModel  # noqa: F401
 from app.security_api import get_token_bearerAuth
 from app.db.session import get_session
 from app.db.club import ClubDB
-from app.dependencies import get_current_club
+from app.dependencies import get_current_club, get_league_scheduler
+from app.ws.league_scheduler import LeagueScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
@@ -271,11 +272,12 @@ async def start_league(
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
     club: ClubDB = Security(get_current_club),
     session: AsyncSession = Depends(get_session),
+    scheduler: LeagueScheduler = Depends(get_league_scheduler),
 ) -> LeagueDetail:
     """Solo el creador puede iniciarla. Cambia el estado a started y genera el fixture."""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0](session).start_league(league_id, club)
+    return await BaseLeaguesApi.subclasses[0](session, scheduler).start_league(league_id, club)
 
 
 @router.get(
