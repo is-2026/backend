@@ -43,9 +43,9 @@ SEPARATION_PASSES = 3
 
 
 # Para la sandbox
-# Cuanto tiempo le voy a dar al decide_action()
-# si hay 6 comportamientos en cancha y tengo ticks de 100ms
-# 6 x 10ms = 60ms me quedan 40ms de margen
+# Cuánto tiempo le doy a cada decide_action().
+# Cada hijo tiene 3 jugadores: 3 x 10 ms = 30 ms en el peor caso,
+# y los dos equipos corren en paralelo, así que sobra lugar en el tick de 100 ms.
 CALL_TIMEOUT = 0.01  # (segundos)
 
 # Cuanto puede tardar en cargarse el código (segundos)
@@ -59,6 +59,6 @@ MEMORY_LIMIT_MB = 256
 MAX_CONSECUTIVE_TIMEOUTS = 3
 
 # Del padre de sandbox
-TICK_DEADLINE = 0.25  # cuánto espera el padre en cada tick.
+TICK_DEADLINE = 0.08  # cuánto espera el padre en cada tick.
 STARTUP_DEADLINE = 2.0  # el primer decide incluye el arranque del hijo
-CLOSE_TIMEOUT = 1.0  # cuanto espera para el join
+CLOSE_TIMEOUT = 0.1  # cuanto espera para el join
