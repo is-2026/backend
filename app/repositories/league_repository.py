@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_, delete, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 
 from app.db.behavior import BehaviorDB
 from app.db.match import MatchDB, MatchStatus
@@ -344,3 +344,21 @@ class LeagueRepository:
             .values(status="finished")
         )
         await self._session.commit()
+
+    async def get_standings(
+        self, league_id: uuid.UUID
+    ) -> list[tuple[LeagueStandingsDB, str]]:
+        """Devuelve las filas de la tabla de posiciones junto con el nombre del club, y ya
+        ordenadas por: Puntos (desc), Diferencia de gol (desc), Goles a favor (desc) y Nombre del club (asc)."""
+        result = await self._session.execute(
+            select(LeagueStandingsDB, ClubDB.club_name)
+            .join(ClubDB, ClubDB.id == LeagueStandingsDB.club_id)
+            .where(LeagueStandingsDB.league_id == league_id)
+            .order_by(
+                LeagueStandingsDB.points.desc(),
+                LeagueStandingsDB.goals_dif.desc(),
+                LeagueStandingsDB.goals_for.desc(),
+                func.lower(ClubDB.club_name).asc(), #case insensitive
+            )
+        )
+        return list(result.all())
