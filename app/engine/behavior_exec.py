@@ -41,6 +41,12 @@ SAFE_BUILTINS = (
     "int",
     "bool",
     "str",
+    "Exception",
+    "ValueError",
+    "TypeError",
+    "ZeroDivisionError",
+    "IndexError",
+    "KeyError",
 )
 
 
