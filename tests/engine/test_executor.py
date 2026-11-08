@@ -9,6 +9,7 @@ from app.engine.actions import Move
 from app.engine.behavior_exec import create_brains, decide_actions
 from app.engine.constants import STARTUP_DEADLINE, TICK_DEADLINE
 from app.engine.executor import BehaviorExecutor
+from app.engine.state import Side
 from tests.engine.conftest import same_code_for_all
 
 CHASE_BALL = """
@@ -103,7 +104,8 @@ async def test_executor_close(state, make_executor):
     executor.close()
     executor.close()  # la segunda no tiene que tirar error
 
-    assert executor._proc not in multiprocessing.active_children()
+    for worker in executor._workers.values():
+        assert worker._proc not in multiprocessing.active_children()
     assert await executor.decide(state) == {}  # cerradoo
 
 
@@ -116,7 +118,7 @@ async def test_child_process_hang(state, make_executor):
     assert await executor.decide(state) == {}
     elapsed = time.monotonic() - start
     assert TICK_DEADLINE <= elapsed < STARTUP_DEADLINE
-    assert not executor._proc.is_alive()  # el padre lo mató
+    assert not executor._workers[Side.HOME]._proc.is_alive()  # el padre lo mató
 
     start = time.monotonic()
     assert await executor.decide(state) == {}
@@ -126,9 +128,24 @@ async def test_child_process_hang(state, make_executor):
 
 async def test_dead_child_process(state, make_executor):
     executor = make_executor(state, {"h1": dedent(GO_RIGHT)})
+    proc = executor._workers[Side.HOME]._proc
 
-    executor._proc.kill()
-    executor._proc.join()
+    proc.kill()
+    proc.join()
 
     assert await executor.decide(state) == {}
     executor.set_behavior("h1", dedent(GO_RIGHT))
+
+
+async def test_hang_freezes_only_its_team(state, make_executor):
+    executor = make_executor(
+        state, {"h1": dedent(HANG_FROM_2ND), "a1": dedent(GO_RIGHT)}
+    )
+    home_right = Move(1.0, 0.0, 100.0)
+    away_right = Move(-1.0, 0.0, 100.0)  # se espeja
+
+    assert await executor.decide(state) == {"h1": home_right, "a1": away_right}
+    assert await executor.decide(state) == {"a1": away_right}  # h1 colgó a los locales
+    assert not executor._workers[Side.HOME]._proc.is_alive()
+    assert executor._workers[Side.AWAY]._proc.is_alive()
+    assert await executor.decide(state) == {"a1": away_right}  # los visitantes siguen

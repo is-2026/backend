@@ -91,16 +91,20 @@ def alarm_handler():
     signal.signal(signal.SIGALRM, previous)
 
 
+def home(state):
+    return [player for player in state.players if player.side == Side.HOME]
+
+
 def prepare(state, codes):
     """Arma lo que recibe _decide_all, igual que lo tiene el hijo."""
     brains = {}
-    for player in state.players:
+    for player in home(state):
         if player.id in codes:
             brains[player.id] = load_brain(player, dedent(codes[player.id]))
     timeouts = {player_id: 0 for player_id in brains}
-    snapshots = {side: take_snapshot(state, side) for side in Side}
-    players_on_field = [(player.id, player.side) for player in state.players]
-    return brains, timeouts, snapshots, players_on_field
+    snapshot = take_snapshot(state, Side.HOME)
+    player_ids = [player.id for player in home(state)]
+    return brains, timeouts, snapshot, player_ids
 
 
 def everyone(state, code, **overrides):
@@ -136,9 +140,8 @@ def spawn_worker():
 
 def ask(conn, state, timeout=5.0):
     """Pide un decide al hijo. timeout largo: el primero incluye el arranque."""
-    snapshots = {side: take_snapshot(state, side) for side in Side}
-    players_on_field = [(player.id, player.side) for player in state.players]
-    conn.send(("decide", snapshots, players_on_field))
+    snapshot = take_snapshot(state, Side.HOME)
+    conn.send(("decide", snapshot, [player.id for player in home(state)]))
     assert conn.poll(timeout), "el hijo no contestó"
     return conn.recv()
 
@@ -147,57 +150,57 @@ def ask(conn, state, timeout=5.0):
 
 
 def test_hanging_player_gets_no_action_and_the_rest_play(state, alarm_handler):
-    brains, timeouts, snapshots, on_field = prepare(
+    brains, timeouts, snapshot, on_field = prepare(
         state, everyone(state, GO_RIGHT, h1=HANG)
     )
 
-    actions = _decide_all(brains, timeouts, snapshots, on_field)
+    actions = _decide_all(brains, timeouts, snapshot, on_field)
 
-    assert set(actions) == {"h2", "h3", "a1", "a2", "a3"}
+    assert set(actions) == {"h2", "h3"}
 
 
 def test_deactivate_after_max_timeouts(state, alarm_handler):
-    brains, timeouts, snapshots, on_field = prepare(
+    brains, timeouts, snapshot, on_field = prepare(
         state, everyone(state, GO_RIGHT, h1=HANG_FIRST_3)
     )
     for _ in range(3):
-        actions = _decide_all(brains, timeouts, snapshots, on_field)
+        actions = _decide_all(brains, timeouts, snapshot, on_field)
 
     assert "h1" not in brains
 
-    actions = _decide_all(brains, timeouts, snapshots, on_field)
+    actions = _decide_all(brains, timeouts, snapshot, on_field)
     assert "h1" not in actions
 
 
 def test_timeouts_restart(state, alarm_handler):
-    brains, timeouts, snapshots, on_field = prepare(
+    brains, timeouts, snapshot, on_field = prepare(
         state, everyone(state, GO_RIGHT, h1=HANG_ALL_BUT_3RD)
     )
     for _ in range(5):
-        _decide_all(brains, timeouts, snapshots, on_field)
+        _decide_all(brains, timeouts, snapshot, on_field)
 
     assert "h1" in brains
 
 
 def test_deactivate_behavior_mem_limit(state, alarm_handler):
-    brains, timeouts, snapshots, on_field = prepare(state, everyone(state, GO_RIGHT))
+    brains, timeouts, snapshot, on_field = prepare(state, everyone(state, GO_RIGHT))
     bombita = Mock()
     bombita.run.side_effect = MemoryError
     brains["h1"] = bombita
 
-    actions = _decide_all(brains, timeouts, snapshots, on_field)
+    actions = _decide_all(brains, timeouts, snapshot, on_field)
 
     assert "h1" not in brains
     assert "h1" not in actions
 
 
 def test_no_action_if_exception(state, alarm_handler):
-    brains, timeouts, snapshots, on_field = prepare(
+    brains, timeouts, snapshot, on_field = prepare(
         state, everyone(state, GO_RIGHT, h1=FAIL_ON_ODD)
     )
 
-    first = _decide_all(brains, timeouts, snapshots, on_field)
-    second = _decide_all(brains, timeouts, snapshots, on_field)
+    first = _decide_all(brains, timeouts, snapshot, on_field)
+    second = _decide_all(brains, timeouts, snapshot, on_field)
 
     assert "h1" not in first
     assert "h1" in second
@@ -216,10 +219,10 @@ def test_load_brain_hang(state, alarm_handler):
 
 
 def test_memory_bomb_leaves_player_still_and_the_rest_play(state, spawn_worker):
-    _, conn = spawn_worker(state.players, everyone(state, GO_RIGHT, h1=MEMORY_BOMB))
+    _, conn = spawn_worker(home(state), everyone(state, GO_RIGHT, h1=MEMORY_BOMB))
 
-    assert set(ask(conn, state)) == {"h2", "h3", "a1", "a2", "a3"}
-    assert set(ask(conn, state)) == {"h2", "h3", "a1", "a2", "a3"}
+    assert set(ask(conn, state)) == {"h2", "h3"}
+    assert set(ask(conn, state)) == {"h2", "h3"}
 
 
 def test_worker_close(state, spawn_worker):

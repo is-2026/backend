@@ -14,7 +14,7 @@ from app.engine.constants import (
     MAX_CONSECUTIVE_TIMEOUTS,
     MEMORY_LIMIT_MB,
 )
-from app.engine.state import PlayerState, Side
+from app.engine.state import PlayerState
 
 
 @contextmanager
@@ -53,8 +53,7 @@ def _worker_main(
     Tipos de mensajes:
     ("close"),
     ("set", player, code),
-    ("decide", snapshots, players)
-    donde players es la lista de jugadores en cancha (player_id, side).
+    ("decide", snapshot, player_ids)
     Todo esto se lo manda el padre.
     """
     os.environ.clear()
@@ -87,8 +86,8 @@ def _worker_main(
                     timeouts[player.id] = 0  # le reincio los timeouts
                 # si el código nuevo se cuelga al cargar, sigue con el brain viejo
             elif type_msg == "decide":
-                _, snapshots, players_on_field = data
-                actions = _decide_all(brains, timeouts, snapshots, players_on_field)
+                _, snapshot, player_ids = data
+                actions = _decide_all(brains, timeouts, snapshot, player_ids)
                 conn.send(actions)
     finally:
         conn.close()
@@ -97,18 +96,18 @@ def _worker_main(
 def _decide_all(
     brains: dict[str, PlayerBrain],
     timeouts: dict[str, int],
-    snapshots: dict[Side, Snapshot],
-    players_on_field: list[tuple[str, Side]],
+    snapshot: Snapshot,
+    player_ids: list[str],
 ) -> dict[str, Action]:
     actions = {}
-    for player_id, side in players_on_field:
+    for player_id in player_ids:
         brain = brains.get(player_id)
         if brain is None:
             continue
 
         try:
             with _time_limit(CALL_TIMEOUT):
-                action = brain.run(snapshots[side])
+                action = brain.run(snapshot)
         except BehaviorTimeout:
             timeouts[player_id] += 1
             if timeouts[player_id] >= MAX_CONSECUTIVE_TIMEOUTS:
