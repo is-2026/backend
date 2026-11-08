@@ -3,6 +3,8 @@ import os
 import resource
 import signal
 from contextlib import contextmanager
+from multiprocessing.connection import Connection
+from multiprocessing.context import SpawnProcess
 
 from app.engine.actions import Action
 from app.engine.behavior_exec import PlayerBrain, Snapshot, load_brain
@@ -120,3 +122,16 @@ def _decide_all(
         if action is not None:
             actions[player_id] = action
     return actions
+
+
+def start_worker(
+    players: list[PlayerState], codes: dict[str, str]
+) -> tuple[SpawnProcess, Connection]:
+    """Devuelve (proceso, conn_padre)"""
+    ctx = multiprocessing.get_context("spawn")
+    parent_conn, child_conn = ctx.Pipe()
+    proc = ctx.Process(target=_worker_main, args=(child_conn, players, codes), daemon=True)
+    proc.start()
+    # el padre nunca va a usar este fd, el hijo tiene una copia propia, lo cierro
+    child_conn.close()
+    return proc, parent_conn
