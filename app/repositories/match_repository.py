@@ -45,8 +45,21 @@ class MatchRepository:
         )
         await self._session.commit()
 
+    async def list_by_league(
+        self,
+        league_id: uuid.UUID,
+        status: MatchStatus | None = None,
+    ) -> list[MatchDB]:
+        stmt = (
+            select(MatchDB)
+            .where(MatchDB.league_id == league_id)
+            .order_by(MatchDB.round_number)
+        )
+        if status is not None:  #opcionalmente filtramos por status
+            stmt = stmt.where(MatchDB.status == status)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
     # TODO: algunos metodos a implementar
-        # list_by_league
         # list_history_by_club
         # list_shared_history

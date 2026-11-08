@@ -17,6 +17,7 @@ from app.repositories.friendly_repository import FriendlyUnavailable, InvalidSqu
 CANT_JUGADORES = 6
 CLUB_CREATOR = uuid.uuid4()
 CLUB_RIVAL = uuid.uuid4()
+CLUB_NAMES = {CLUB_CREATOR: "Boca", CLUB_RIVAL: "River"}
 
 def make_squad( starters : int, total : int = CANT_JUGADORES) -> list[SquadPlayerInput]:
     return[
@@ -56,6 +57,8 @@ def mocks(monkeypatch):
     m.verify_password = AsyncMock(return_value=True)
  
     m.player_repo.count_club_players.return_value = CANT_JUGADORES #la cant de jugadores por repo es 6
+    # nombre de cada club según su id
+    m.friendly_repo.get_club_name.side_effect = CLUB_NAMES.get
  
     monkeypatch.setattr(friendlies_api_impl, "FriendlyRepository", MagicMock(return_value=m.friendly_repo)) #mockeo, reemplazo lo que espera por mis mocks 
     monkeypatch.setattr(friendlies_api_impl, "PlayerRepository", MagicMock(return_value=m.player_repo))
@@ -66,7 +69,7 @@ def mocks(monkeypatch):
 @pytest.fixture
 def api(mocks): #lo que vamos a testear
     impl = FriendliesApiImpl(session=MagicMock(), lobby_manager=mocks.lobby)
-    impl._schedule_start = MagicMock()  # schedule_start es lo que crea el timer de 30s, como no lo queremos ponemos un mock
+    impl._schedule_start = MagicMock()  # schedule_start es lo que crea el timer del lobby, como no lo queremos ponemos un mock
     return impl
  
  
@@ -97,6 +100,7 @@ async def test_create_friendly_public(api, mocks):
     mocks.hash_password.assert_not_awaited()  # sin contraseña no se hashea nada
     assert result.is_private is False
     assert result.rival_club_id is None
+    assert result.creator_club_name == "Boca"
  
  
 async def test_create_friendly_private(api, mocks):
@@ -266,7 +270,6 @@ async def test_join_friendly_ok(api, mocks):
         ),
         match,
     )
-    mocks.friendly_repo.get_club_name.return_value = "River"
  
     result = await api.join_friendly(
         friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
@@ -274,6 +277,8 @@ async def test_join_friendly_ok(api, mocks):
  
     # 1. devuelve el friendly con rival y match
     assert result.rival_club_id == CLUB_RIVAL
+    # el nombre del creador, no el del que se une
+    assert result.creator_club_name == "Boca"
     assert result.match_id == match.id
  
     # 2. avisó por websocket
@@ -291,7 +296,6 @@ async def test_join_friendly_private_correct_password(api, mocks):
     match = SimpleNamespace(id=uuid.uuid4())
     mocks.friendly_repo.get.return_value = friendly
     mocks.friendly_repo.accept.return_value = (friendly_accepted(friendly, "hashed"), match)
-    mocks.friendly_repo.get_club_name.return_value = "River"
  
     result = await api.join_friendly(
         friendly.id, JoinFriendlyInput(players=make_squad(3), password="1234"), CLUB_RIVAL
@@ -332,6 +336,9 @@ async def test_list_friendlies_returns_list(mocked_repo_class):
     
     # Configuramos el mock del repositorio
     mocked_repo.list_available_friendlies = AsyncMock(return_value=fake_list)
+    mocked_repo.get_club_names = AsyncMock(
+        return_value={club_id_1: "Boca", club_id_2: "River"}
+    )
     
     # Configuramos el comportamiento del método is_private
     def mock_is_private(f):
@@ -356,6 +363,10 @@ async def test_list_friendlies_returns_list(mocked_repo_class):
     assert result[1].creator_club_id == club_id_2
     assert result[1].is_private is True
     assert result[1].status == "waiting_for_rival"
+
+    assert result[0].creator_club_name == "Boca"
+    assert result[1].creator_club_name == "River"
+    mocked_repo.get_club_names.assert_awaited_once_with([club_id_1, club_id_2])
     
     mocked_repo.list_available_friendlies.assert_awaited_once()
 
@@ -373,4 +384,6 @@ async def test_list_friendlies_returns_empty(mocked_repo_class):
     result = await api.list_friendlies()
 
     assert result == []
+    # sin amistosos no consulta los nombres
+    mocked_repo.get_club_names.assert_not_called()
     mocked_repo.list_available_friendlies.assert_awaited_once()

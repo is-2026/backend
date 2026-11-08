@@ -181,3 +181,27 @@ async def test_list_available_friendlies_success(session):
             assert repo.is_private(friendly) is False
         elif friendly.id == friendly_id_2:
             assert repo.is_private(friendly) is True
+
+
+async def test_get_club_names_only_requested_clubs(session):
+    club_ids = {}
+    for name in ("Boca", "River", "Racing"):
+        user = UserDB(
+            id=uuid.uuid4(), email=f"{name.lower()}@example.com", hashed_password="x"
+        )
+        session.add(user)
+        await session.flush()  # el usuario se inserta antes que el club
+        club = ClubDB(
+            id=uuid.uuid4(),
+            club_name=name,
+            avatar_url="https://example.com/a.png",
+            user_id=user.id,
+        )
+        session.add(club)
+        club_ids[name] = club.id
+    await session.commit()
+
+    repo = FriendlyRepository(session)
+    names = await repo.get_club_names([club_ids["Boca"], club_ids["River"]])
+
+    assert names == {club_ids["Boca"]: "Boca", club_ids["River"]: "River"}
