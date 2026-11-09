@@ -311,6 +311,7 @@ async def test_list_leagues_public(api, mocks):
         max_clubs=5,
         status="not_started",
         allows_draws=True,
+        creator_club_id=CLUB.id,
     )
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River")
     mocks.league_repo.list_not_started.return_value = [league]
@@ -335,6 +336,7 @@ async def test_list_leagues_private(api, mocks):
         max_clubs=5,
         status="not_started",
         allows_draws=True,
+        creator_club_id=CLUB.id,
     )
     mocks.league_repo.list_not_started.return_value = [league]
     mocks.league_repo.list_clubs_of_league.return_value = []

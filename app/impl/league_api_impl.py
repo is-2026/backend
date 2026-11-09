@@ -119,6 +119,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             max_clubs=league.max_clubs,
             status=league.status,
             allows_draws=league.allows_draws,
+            creator_club_id=club_id.id,
             registered_clubs=[{"club_id": club_id.id, "club_name": club_id.club_name}],
         )
 
@@ -142,6 +143,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
                     max_clubs=league.max_clubs,
                     status=league.status,
                     allows_draws=league.allows_draws,
+                    creator_club_id=league.creator_club_id,
                     registered_clubs=registered,
                 )
             )
@@ -365,6 +367,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             max_clubs=league.max_clubs,
             status="started",  # ya sabemos que arranco
             allows_draws=league.allows_draws,
+            creator_club_id=league.creator_club_id,
             registered_clubs=registered,
         )
 
@@ -396,7 +399,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
         }
         await league_lobby_connection.broadcast(league_id, event_league_cancelled)
         await league_lobby_connection.close_all(league_id)
-        
+
     async def get_standings(self, league_id: uuid.UUID) -> list[StandingsItem]:
         repo = LeagueRepository(self._session)
         league = await repo.get(league_id)
