@@ -205,6 +205,48 @@ class LeagueRepository:
         await self._session.delete(enrollment)
         await self._session.commit()
 
+    async def get_enrollment(
+        self, league_id: uuid.UUID, club_id: uuid.UUID
+    ) -> LeagueEnrollmentDB | None:
+        # busco la inscripcion del club en la liga (None si no esta inscripto)
+        result = await self._session.execute(
+            select(LeagueEnrollmentDB).where(
+                LeagueEnrollmentDB.league_id == league_id,
+                LeagueEnrollmentDB.club_id == club_id,
+            )
+        )
+        return result.scalars().first()
+
+    async def list_enrollment_players(
+        self, enrollment_id: uuid.UUID
+    ) -> list[LeagueEnrollmentPlayerDB]:
+        # los 6 convocados de la inscripcion
+        result = await self._session.execute(
+            select(LeagueEnrollmentPlayerDB).where(
+                LeagueEnrollmentPlayerDB.enrollment_id == enrollment_id
+            )
+        )
+        return list(result.scalars().all())
+
+    async def update_lineup(
+        self,
+        enrollment: LeagueEnrollmentDB,
+        formation: str,
+        squadPlayer: list[SquadPlayerData],
+    ) -> None:
+        enrollment.formation = formation
+
+        # actualizo cada convocado con lo que mando el club
+        players = await self.list_enrollment_players(enrollment.id)
+        for player in players:
+            for sp in squadPlayer:
+                if sp.player_id == player.player_id:
+                    player.is_starter = sp.is_starter
+                    # si no es titular -> behavior=None
+                    player.behavior_id = sp.behavior_id if sp.is_starter else None
+
+        await self._session.commit()
+
     async def start_league(self, league_id: uuid.UUID) -> None:
         """
         Inicia la liga: cambia el estado, genera el fixture (partidos)
