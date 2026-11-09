@@ -36,8 +36,7 @@ class FormationPreset(str, Enum):
     """
     TRIANGLE = 'TRIANGLE'
     OFFENSIVE_LINE = 'OFFENSIVE_LINE'
-    DEFENSIVE = 'DEFENSIVE'
-    DIAGONAL = 'DIAGONAL'
+    DEFENSIVE_LINE = 'DEFENSIVE_LINE'
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:

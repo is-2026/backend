@@ -8,7 +8,6 @@ from app.models.error import Error
 from app.models.match import Match
 from app.models.penalty_order_input import PenaltyOrderInput
 from app.models.schedule_substitution_input import ScheduleSubstitutionInput
-from app.models.submit_lineup_input import SubmitLineupInput
 from app.models.substitution import Substitution
 from app.security_api import get_token_bearerAuth
 
@@ -29,19 +28,6 @@ class BaseMatchApi:
         """
         ...
 
-    async def set_lineup(
-        self,
-        match_id: UUID,
-        submit_lineup_input: SubmitLineupInput,
-    ) -> Match:
-        """Ventana de 30 segundos antes de cada partido (liga y amistoso).
-        Los jugadores incluidos deben pertenecer al pool de convocados de la inscripción
-        (liga) o el desafío/búsqueda (amistoso) correspondiente. Si no se completa a
-        tiempo, el sistema asigna automáticamente los titulares/suplentes por defecto
-        enviados al momento de inscribirse, los 3 comportamientos asignados a los
-        jugadores por defecto, y la formación default del club.
-        """
-        ...
 
     async def change_live_behavior(
         self,

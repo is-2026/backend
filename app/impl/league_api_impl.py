@@ -14,6 +14,8 @@ from app.models.league_detail import LeagueDetail
 from app.models.league_summary import LeagueSummary
 from app.models.match import Match
 from app.models.standings_item import StandingsItem
+from app.models.squad_player_input import SquadPlayerInput
+from app.models.submit_lineup_input import SubmitLineupInput
 from app.repositories.league_repository import (
     LeagueRepository,
     SquadPlayerData,
@@ -430,6 +432,103 @@ class LeaguesApiImpl(BaseLeaguesApi):
             )
             for standing, club_name in rows
         ]
+
+    async def get_league_lineup(
+        self, league_id: uuid.UUID, club: ClubDB
+    ) -> SubmitLineupInput:
+        repo = LeagueRepository(self._session)
+
+        # verificamos que la liga exista (404)
+        league = await repo.get(league_id)
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga indicada no existe")
+
+        # verificamos que el club este inscripto (403)
+        enrollment = await repo.get_enrollment(league_id, club.id)
+        if not enrollment:
+            raise HTTPException(
+                status_code=403, detail="El club no está inscripto en esta liga"
+            )
+
+        # traemos los 6 convocados y los mapeamos al modelo
+        players = await repo.list_enrollment_players(enrollment.id)
+        return SubmitLineupInput(
+            formation=enrollment.formation,
+            players=[
+                SquadPlayerInput(
+                    player_id=pl.player_id,
+                    is_starter=pl.is_starter,
+                    behavior_id=pl.behavior_id,
+                )
+                for pl in players
+            ],
+        )
+    
+    async def update_league_lineup(
+        self,
+        league_id: uuid.UUID,
+        submit_lineup_input: SubmitLineupInput,
+        club: ClubDB,
+    ) -> SubmitLineupInput:
+        repo = LeagueRepository(self._session)
+
+        # valido titulares, repetidos y que los titulares tengan comportamiento (400)
+        _validate_squad(submit_lineup_input.players)
+
+        # verificamos que la liga exista (404)
+        league = await repo.get(league_id)
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga indicada no existe")
+
+        # no se puede cambiar si la liga esta terminada o cancelada (409)
+        if league.status in ("finished", "cancelled"):
+            raise HTTPException(
+                status_code=409, detail="La liga está terminada o cancelada"
+            )
+
+        # verificamos que el club este inscripto (403)
+        enrollment = await repo.get_enrollment(league_id, club.id)
+        if not enrollment:
+            raise HTTPException(
+                status_code=403, detail="El club no está inscripto en esta liga"
+            )
+
+        # los jugadores tienen que ser los 6 convocados del club (400)
+        players = await repo.list_enrollment_players(enrollment.id)
+        convocados = {pl.player_id for pl in players}
+        enviados = {pl.player_id for pl in submit_lineup_input.players}
+        if convocados != enviados:
+            raise HTTPException(
+                status_code=400,
+                detail="Los jugadores tienen que ser los 6 convocados del club en la liga",
+            )
+
+        # el comportamiento de cada titular tiene que ser del club y no de DT (400)
+        for pl in submit_lineup_input.players:
+            if pl.is_starter:
+                behavior = await self._session.get(BehaviorDB, pl.behavior_id)
+                if (
+                    behavior is None
+                    or behavior.club_id != club.id
+                    or behavior.kind == "coach"
+                ):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Hay comportamientos que no pertenecen a tu club o son de DT",
+                    )
+
+        # guardamos la alineacion
+        await repo.update_lineup(
+            enrollment,
+            submit_lineup_input.formation.value,
+            [
+                SquadPlayerData(pl.player_id, pl.is_starter, pl.behavior_id)
+                for pl in submit_lineup_input.players
+            ],
+        )
+
+        # devolvemos la alineacion guardada
+        return await self.get_league_lineup(league_id, club)
 
     async def list_league_matches(
         self,

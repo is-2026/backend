@@ -62,8 +62,6 @@ class MatchApiImpl(BaseMatchApi):
         # mapeamos al modelo pydantic
         return _to_match(match_db)
 
-    async def set_lineup(self, match_id, submit_lineup_input) -> Match:
-        raise NotImplementedError
 
     async def change_live_behavior(
         self,
