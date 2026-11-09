@@ -6,6 +6,8 @@ from fastapi import HTTPException
 
 from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
+from app.db.league import LeagueDB
+from app.db.match import MatchDB, MatchStatus
 from app.db.user import UserDB
 from app.engine.constants import TRIANGLE_HOME
 from app.engine.executor import BehaviorExecutor
@@ -274,3 +276,73 @@ async def test_change_live_behavior_player_not_field(client, club, live, sent, b
     assert result.status_code == 404
     assert (result.json()["message"] == "El jugador no se encuentra en cancha del lado del club"
 )
+
+async def test_get_match_returns_200_with_details(client, session, club):
+    other_user_id = uuid.uuid4()
+    other_club_id = uuid.uuid4()
+    league_id = uuid.uuid4()
+    match_id = uuid.uuid4()
+
+    session.add(
+        UserDB(id=other_user_id, email="rival@prueba.com", hashed_password="hash")
+    )
+    await session.flush()
+    session.add(
+        ClubDB(
+            id=other_club_id,
+            club_name="Talleres",
+            avatar_url="https://x/t.png",
+            user_id=other_user_id,
+        )
+    )
+    session.add(
+        LeagueDB(
+            id=league_id,
+            name="Liga Cordobesa",
+            max_clubs=4,
+            match_duration_minutes=5,
+            status="started",
+            creator_club_id=club[0].id,
+        )
+    )
+    await session.flush()
+    session.add(
+        MatchDB(
+            id=match_id,
+            league_id=league_id,
+            round_number=3,
+            home_club_id=club[0].id,
+            away_club_id=other_club_id,
+            status=MatchStatus.finished,
+            home_score=2,
+            away_score=0,
+        )
+    )
+    await session.commit()
+
+    r = await client.get(f"/matches/{match_id}", headers=auth_header(club))
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["id"] == str(match_id)
+    assert data["league_id"] == str(league_id)
+    assert data["round_number"] == 3
+    assert data["home_club_id"] == str(club[0].id)
+    assert data["home_club_name"] == "Instituto"
+    assert data["away_club_id"] == str(other_club_id)
+    assert data["away_club_name"] == "Talleres"
+    assert data["status"] == "finished"
+    assert data["home_score"] == 2
+    assert data["away_score"] == 0
+
+
+async def test_get_match_not_found_returns_404(client, club):
+    r = await client.get(f"/matches/{uuid.uuid4()}", headers=auth_header(club))
+    assert r.status_code == 404
+    assert "message" in r.json()
+
+
+async def test_get_match_unauthorized_returns_401(client):
+    r = await client.get(f"/matches/{uuid.uuid4()}")
+    assert r.status_code == 401
+    assert "message" in r.json()

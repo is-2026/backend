@@ -277,6 +277,12 @@ class LeagueRepository:
 
         await self._session.commit()
 
+    async def cancel_league(self, league_id: uuid.UUID) -> None:
+        # cambiamos el estado de la liga a cancelada
+        league = await self.get(league_id)
+        league.status = "cancelled"
+        await self._session.commit()
+
 
     # suma por club las filas de la tabla de posiciones de las ligas publicas
     # en curso o terminadas. solo clubes con al menos un partido jugado

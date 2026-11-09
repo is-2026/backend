@@ -54,6 +54,7 @@ class BaseLeaguesApi:
     async def cancel_league(
         self,
         league_id: UUID,
+        club_id: UUID,
     ) -> None:
         """Solo el creador puede cancelarla, y solo si no está iniciada."""
         ...

@@ -165,7 +165,7 @@ async def get_league(
             "description": "El usuario no tiene permisos para realizar esta operación",
         },
         404: {"model": Error, "description": "Recurso no encontrado"},
-        409: {"model": Error, "description": "La liga ya se encuentra iniciada"},
+        409: {"model": Error, "description": "La liga ya se encuentra iniciada, terminada o cancelada"},
     },
     tags=["Leagues"],
     summary="Cancelar liga",
@@ -174,11 +174,13 @@ async def get_league(
 async def cancel_league(
     league_id: UUID = Path(..., description=""),
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
 ) -> None:
     """Solo el creador puede cancelarla, y solo si no está iniciada."""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().cancel_league(league_id)
+    return await BaseLeaguesApi.subclasses[0](session).cancel_league(league_id, club)
 
 
 @router.post(
@@ -299,10 +301,13 @@ async def list_league_matches(
     league_id: UUID = Path(..., description=""),
     status: Optional[str] = Query(None, description="", alias="status"),
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    session: AsyncSession = Depends(get_session),
 ) -> List[Match]:
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().list_league_matches(league_id, status)
+    return await BaseLeaguesApi.subclasses[0](session).list_league_matches(
+        league_id, status
+    )
 
 
 @router.get(
