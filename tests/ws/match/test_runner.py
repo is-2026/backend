@@ -8,6 +8,7 @@ from app.engine.state import Side
 from app.ws.close_codes import NORMAL
 from app.ws.match import runner
 from app.ws.match.pauses import Pause
+from app.ws.match.penalty_order import build_penalty_order
 from app.ws.match.runner import (
     LiveMatch,
     Phase,
@@ -282,3 +283,19 @@ def test_started_payload_during_penalty_window(live):
     assert payload["data"]["status"] == "penalties"
     assert payload["data"]["home_penalties"] == 0
     assert payload["data"]["away_penalties"] == 0
+
+
+async def test_penalties_use_the_order_chosen_in_the_window(live, client):
+    live.allows_draws = False
+    live.penalty_orders["club-local"] = build_penalty_order(
+        live.info, "club-local", ["h4", "h5", "h6", "h1", "h2"]
+    )
+
+    await run_match(live, **NO_WAIT)
+
+    kicks = [m["data"] for m in client.sent if m["type"] == "penaltyKick"]
+    home = [k["kicker_id"] for k in kicks if k["team_id"] == "club-local"]
+    assert home[:5] == ["h4", "h5", "h6", "h1", "h2"]
+    # el visitante no eligió: patea con el orden por defecto contra los elegidos del local
+    away = [(k["kicker_id"], k["defender_id"]) for k in kicks if k["team_id"] == "club-visitante"]
+    assert away[:2] == [("a1", "h4"), ("a2", "h5")]
