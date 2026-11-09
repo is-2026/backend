@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from app.engine.behavior_exec import CoachSnapshot
-from app.engine.coach_orders import CoachOrder, SetBehavior, Substitute
+from app.engine.coach_orders import CoachOrder, PenaltyOrder, SetBehavior, Substitute
 from app.engine.state import Side
 from app.ws.match.info import LineupPlayer, MatchInfo
 from app.ws.match.live_behavior import (
@@ -13,6 +13,11 @@ from app.ws.match.live_behavior import (
     validate_player_on_field,
 )
 from app.ws.match.messages import behavior_changed_message
+from app.ws.match.penalty_order import (
+    InvalidPenaltyOrder,
+    build_penalty_order,
+    load_penalty_order,
+)
 from app.ws.match.substitutions import (
     ClubNotInMatch,
     InvalidSubstitution,
@@ -24,8 +29,7 @@ from app.ws.match.substitutions import (
     validate_players,
 )
 
-if TYPE_CHECKING:
-    # solo para los tipos: el runner importa este módulo
+if TYPE_CHECKING:  # si lo importo normal queda circular con runner
     from app.ws.match.runner import LiveMatch
 
 logger = logging.getLogger(__name__)
@@ -33,19 +37,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ClubBehavior:
-    """Comportamiento de jugador del club, cargado al arrancar el partido."""
     name: str
     code: str
 
 
 @dataclass(frozen=True)
 class CoachSetup:
-    """El DT de un club en un partido: se arma al arrancar y no cambia aunque el
-    club active o quite su DT durante el partido."""
-
     code: str
-    # behavior_id -> comportamiento: los únicos que el DT puede asignar
-    behaviors: dict[str, ClubBehavior]
+    behaviors: dict[str, ClubBehavior]  # behavior_id -> comportamiento de jugador
 
 
 def _team_id(side: Side, info: MatchInfo) -> str:
@@ -57,14 +56,12 @@ def _lineup(side: Side, info: MatchInfo) -> list[LineupPlayer]:
 
 
 def coach_codes(coaches: dict[str, CoachSetup], info: MatchInfo) -> dict[Side, str]:
-    """team_id -> DT pasa a lado -> código del DT, que es lo que pide el executor."""
     return {get_side(team_id, info): setup.code for team_id, setup in coaches.items()}
 
 
 def coach_snapshot(
     live: "LiveMatch", team_id: str, penalty_shootout: bool = False
 ) -> CoachSnapshot:
-    """La foto que ve el DT del club en este momento del partido."""
     side = get_side(team_id, live.info)
     state = live.state
     lineup = _lineup(side, live.info)
@@ -93,10 +90,11 @@ def coach_snapshot(
     )
 
 
-def coach_snapshots(live: "LiveMatch") -> dict[Side, CoachSnapshot]:
-    """Las fotos de los DT del partido, por lado. Un club sin DT no aparece."""
+def coach_snapshots(
+    live: "LiveMatch", penalty_shootout: bool = False
+) -> dict[Side, CoachSnapshot]:
     return {
-        get_side(team_id, live.info): coach_snapshot(live, team_id)
+        get_side(team_id, live.info): coach_snapshot(live, team_id, penalty_shootout)
         for team_id in live.coaches
     }
 
@@ -104,8 +102,7 @@ def coach_snapshots(live: "LiveMatch") -> dict[Side, CoachSnapshot]:
 def _apply_set_behavior(
     live: "LiveMatch", team_id: str, order: SetBehavior
 ) -> dict | None:
-    """Cambia el comportamiento del jugador. Devuelve el behaviorChanged para mandar,
-    o None si la orden no es válida o el jugador ya tenía ese comportamiento."""
+    """Devuelve el mensaje behaviorChanged, o None si no se hizo el cambio"""
     behavior = live.coaches[team_id].behaviors.get(order.behavior_id)
     if behavior is None:
         logger.debug("DT de %s: el comportamiento %s no es del club", team_id, order)
@@ -119,9 +116,8 @@ def _apply_set_behavior(
     lineup = _lineup(get_side(team_id, live.info), live.info)
     current = next(p for p in lineup if p.player_id == order.player_id)
     if current.behavior_id == order.behavior_id:
-        return None  # ya lo tiene: no lo recargo en el hijo
+        return None  # ya lo tiene
 
-    # se carga ahora, entre este tick y el siguiente: rige desde el próximo tick
     live.executor.set_behavior(order.player_id, behavior.code)
     update_info_match(
         live.info, team_id, order.player_id, order.behavior_id, behavior.name
@@ -137,14 +133,12 @@ def _apply_set_behavior(
 
 
 def _apply_substitute(live: "LiveMatch", team_id: str, order: Substitute) -> None:
-    """Programa la sustitución para la próxima pausa, igual que el endpoint."""
     behavior = live.coaches[team_id].behaviors.get(order.behavior_id)
     if behavior is None:
         logger.debug("DT de %s: el comportamiento %s no es del club", team_id, order)
         return
     try:
-        # el DT solo corre mientras se juega: nunca está en una pausa
-        window = substitution_window(False, live.pauses_started)
+        window = substitution_window(False, live.pauses_started)  # nunca en pausa
         validate_players(
             live.state, live.info, team_id, order.player_out_id, order.player_in_id
         )
@@ -165,13 +159,12 @@ def _apply_substitute(live: "LiveMatch", team_id: str, order: Substitute) -> Non
 def apply_coach_orders(
     live: "LiveMatch", orders: dict[Side, list[CoachOrder]]
 ) -> list[dict]:
-    """Valida y aplica las órdenes de los DT de este tick.
-    Devuelve los mensajes para mandar por el websocket (behaviorChanged)."""
+    """Aplica las ordenes del tick y devuelve los mensajes para mandar"""
     messages = []
     for side, team_orders in orders.items():
         team_id = _team_id(side, live.info)
         if team_id not in live.coaches:
-            continue  # ese club no tiene DT en este partido
+            continue
         for order in team_orders:
             try:
                 if isinstance(order, SetBehavior):
@@ -180,7 +173,38 @@ def apply_coach_orders(
                         messages.append(message)
                 elif isinstance(order, Substitute):
                     _apply_substitute(live, team_id, order)
-                # el PenaltyOrder no llega durante el juego (el DT lo ignora)
             except ClubNotInMatch:
                 logger.warning("El DT de %s no juega este partido", team_id)
     return messages
+
+
+def _apply_penalty_order(live: "LiveMatch", team_id: str, order: PenaltyOrder) -> None:
+    # si no es valido no hago nada y patean los de por defecto
+    behaviors = live.coaches[team_id].behaviors
+    codes = []
+    for _, behavior_id in order.kickers:
+        behavior = behaviors.get(behavior_id)
+        if behavior is None:
+            logger.debug("DT de %s: comportamiento ajeno en %s", team_id, order)
+            return
+        codes.append(behavior.code)
+    try:
+        kickers = build_penalty_order(
+            live.info, team_id, [player_id for player_id, _ in order.kickers]
+        )
+    except InvalidPenaltyOrder as e:
+        logger.debug("DT de %s: orden de penales ignorado (%s)", team_id, e)
+        return
+    load_penalty_order(live, team_id, kickers, codes)
+
+
+def apply_penalty_orders(
+    live: "LiveMatch", orders: dict[Side, list[CoachOrder]]
+) -> None:
+    for side, team_orders in orders.items():
+        team_id = _team_id(side, live.info)
+        if team_id not in live.coaches:
+            continue
+        for order in team_orders:
+            if isinstance(order, PenaltyOrder):
+                _apply_penalty_order(live, team_id, order)

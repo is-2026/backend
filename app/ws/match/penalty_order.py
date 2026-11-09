@@ -1,6 +1,11 @@
+from typing import TYPE_CHECKING
+
 from app.engine.state import PlayerState, Side
 from app.ws.match.info import MatchInfo
 from app.ws.match.substitutions import get_side
+
+if TYPE_CHECKING:
+    from app.ws.match.runner import LiveMatch
 
 
 class InvalidPenaltyOrder(Exception):
@@ -31,3 +36,12 @@ def build_penalty_order(
         )
         for player_id in player_ids
     ]
+
+
+def load_penalty_order(
+    live: "LiveMatch", team_id: str, kickers: list[PlayerState], codes: list[str]
+) -> None:
+    # se cargan ya, asi el hijo los tiene listos cuando arranca la tanda
+    for player, code in zip(kickers, codes, strict=True):
+        live.executor.set_player_behavior(player, code)
+    live.penalty_orders[team_id] = kickers

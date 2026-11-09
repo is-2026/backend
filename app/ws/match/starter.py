@@ -101,10 +101,6 @@ def build_match_info(
 
 
 def build_coach_setup(club: ClubDB, behaviors: list[BehaviorDB]) -> CoachSetup | None:
-    """El DT del club para este partido, o None si no tiene.
-    behaviors = todos los comportamientos del club (de jugador y de DT).
-    Guarda copias del código y los nombres: si el club cambia o quita su DT
-    durante el partido, este no se entera."""
     if club.coach_behavior_id is None:
         return None
     coach = next(
@@ -112,7 +108,6 @@ def build_coach_setup(club: ClubDB, behaviors: list[BehaviorDB]) -> CoachSetup |
         None,
     )
     if coach is None:
-        # no debería pasar: el endpoint lo valida y la FK pone NULL al borrarlo
         logger.warning("El DT %s del club %s no existe", club.coach_behavior_id, club.id)
         return None
     return CoachSetup(
@@ -160,8 +155,7 @@ class MatchStarter:
             state, codes = build_match_state(match, squad, total_ticks=total_ticks)
             info = build_match_info(home_club, away_club, squad)
 
-            # el DT se lee una sola vez, acá: activarlo o quitarlo durante el
-            # partido no lo cambia. Solo se consulta la base si el club tiene DT.
+            # cargo los DT
             coaches: dict[str, CoachSetup] = {}
             for club in (home_club, away_club):
                 if club.coach_behavior_id is None:

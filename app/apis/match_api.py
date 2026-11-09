@@ -239,7 +239,7 @@ async def unschedule_substitution(
             "description": "El club del usuario no juega ese partido",
         },
         404: {"model": Error, "description": "El partido no está en juego"},
-        409: {"model": Error, "description": "No hay una ventana de penales abierta"},
+        409: {"model": Error, "description": "No hay una ventana de penales abierta, o el club tiene un DT a cargo del partido"},
     },
     tags=["Match"],
     summary="Elegir los pateadores de la tanda de penales",

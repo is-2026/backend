@@ -22,6 +22,7 @@ from app.ws.connection_manager import ConnectionManager
 from app.ws.match.coach import (
     CoachSetup,
     apply_coach_orders,
+    apply_penalty_orders,
     coach_codes,
     coach_snapshots,
 )
@@ -88,8 +89,7 @@ class LiveMatch:
     pending_substitutions: dict[str, PendingSubstitution] = field(default_factory=dict)
     # cuantas pausas empezaron
     pauses_started: int = 0
-    # team_id -> DT del club. Se fija al arrancar: activar o quitar el DT
-    # durante el partido no lo cambia. Un club que no está juega sin DT.
+    # team_id -> DT, se carga al arrancar y no cambia en el partido
     coaches: dict[str, CoachSetup] = field(default_factory=dict)
     # referencia a la tarea, si nadie la guarda, se puede perder
     task: asyncio.Task | None = None
@@ -118,7 +118,6 @@ def start_match(
 ) -> LiveMatch:
     """Prepara el partido, lo anota en live_matches y lo larga como tarea de fondo.
     codes = player_id -> código del comportamiento.
-    coaches = team_id -> DT del club (los clubes sin DT no aparecen).
     Es sync pero usa create_task: hay que llamarla dentro del event loop."""
     if match_id in live_matches:
         return live_matches[match_id]  # ya se está jugando: no lo largamos dos veces
@@ -195,8 +194,7 @@ async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
 
 
 async def _tick(live: LiveMatch, rng: random.Random) -> None:
-    """Avanza el partido un tick:
-    decide (jugadores y DT) -> step -> goal(s) -> matchState -> órdenes del DT."""
+    """Avanza el partido un tick: decide -> step -> goal(s) -> matchState -> DT"""
     actions, orders = await live.executor.decide_with_coach(
         live.state, coach_snapshots(live)
     )
@@ -211,8 +209,7 @@ async def _tick(live: LiveMatch, rng: random.Random) -> None:
     live.last_state = _state_payload(live)
     await match_connections.broadcast(live.match_id, live.last_state)
 
-    # las órdenes se aplican después del step: los jugadores de este tick ya
-    # decidieron, así que un cambio de comportamiento rige desde el tick siguiente
+    # despues del step, asi el cambio rige desde el tick siguiente
     for message in apply_coach_orders(live, orders):
         await match_connections.broadcast(live.match_id, message)
 
@@ -304,6 +301,13 @@ async def _penalties(
         str(live.match_id), penalty_window
     ).model_dump(mode="json")
     await match_connections.broadcast(live.match_id, live.current_pause)
+
+    # los DT eligen los pateadores
+    if live.coaches:
+        orders = await live.executor.decide_coaches(
+            coach_snapshots(live, penalty_shootout=True)
+        )
+        apply_penalty_orders(live, orders)
 
     await asyncio.sleep(penalty_window)
 

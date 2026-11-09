@@ -160,10 +160,7 @@ def _decide_all(
 def _decide_coach(
     coach: CoachBrain | None, snapshot: CoachSnapshot | None
 ) -> tuple[list[CoachOrder], CoachBrain | None]:
-    """Corre el DT con límite de tiempo. Devuelve (órdenes, DT con el que sigue).
-    A diferencia de los jugadores, un timeout no lo saca del partido: pierde las
-    órdenes de ese tick y en el siguiente se lo vuelve a llamar (así dice el
-    contrato). Solo se lo saca si se queda sin memoria."""
+    # al DT no lo saco por timeouts como a los jugadores, solo si se queda sin memoria
     if coach is None or snapshot is None: ## Si alguno es none, no hace nada
         return [], coach
     try:
@@ -179,8 +176,7 @@ def _decide_coach(
 def start_worker(
     players: list[PlayerState], codes: dict[str, str], coach_code: str | None = None
 ) -> tuple[SpawnProcess, Connection]:
-    """Devuelve (proceso, conn_padre). coach_code es el código del DT del equipo,
-    o None si juega sin DT."""
+    """Devuelve (proceso, conn_padre)"""
     ctx = multiprocessing.get_context("spawn")
     parent_conn, child_conn = ctx.Pipe()
     proc = ctx.Process( #crea el proceso hijo donde se van a correr  los comportamientos.

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class _TeamWorker:
-    """Un proceso hijo con los comportamientos de un equipo (y su DT, si tiene)."""
+    """Un proceso hijo con los comportamientos de un equipo."""
 
     def __init__(
         self,
@@ -27,8 +27,7 @@ class _TeamWorker:
         self._dead = False
 
     async def _request(self, message: tuple) -> object | None:
-        """Le manda un mensaje al hijo y espera la respuesta hasta el deadline.
-        Si no contesta a tiempo o se murió, lo mata y devuelve None."""
+        # si no contesta a tiempo o se murio lo mato y devuelvo None
         if self._dead:
             return None
         deadline = TICK_DEADLINE if self._started else STARTUP_DEADLINE
@@ -55,14 +54,13 @@ class _TeamWorker:
         player_ids: list[str],
         coach_snapshot: CoachSnapshot | None = None,
     ) -> tuple[dict[str, Action], list[CoachOrder]]:
-        """Acciones de los jugadores y órdenes del DT en este tick."""
         response = await self._request(("decide", snapshot, player_ids, coach_snapshot))
         if response is None:
             return {}, []
         return response
 
     async def decide_coach(self, coach_snapshot: CoachSnapshot) -> list[CoachOrder]:
-        """Corre solo al DT (la llamada de la ventana de penales)."""
+        # para la llamada de penales
         response = await self._request(("coach", coach_snapshot))
         if response is None:
             return []
@@ -104,7 +102,6 @@ class BehaviorExecutor:
         codes: dict[str, str],
         coach_codes: dict[Side, str] | None = None,
     ):
-        """coach_codes = lado -> código del DT. Un lado que no está juega sin DT."""
         self._state = state
         coach_codes = coach_codes or {}
         self._workers = {
@@ -120,8 +117,7 @@ class BehaviorExecutor:
     async def decide_with_coach(
         self, state: MatchState, coach_snapshots: dict[Side, CoachSnapshot]
     ) -> tuple[dict[str, Action], dict[Side, list[CoachOrder]]]:
-        """Acciones de todos los jugadores y órdenes de cada DT, separadas por lado.
-        coach_snapshots = lado -> foto del DT. Un lado que no está no corre el DT."""
+        """Devuelve las acciones y las ordenes de cada DT por lado"""
         sides = list(self._workers)
         calls = []
         for side in sides:
@@ -142,14 +138,12 @@ class BehaviorExecutor:
         return actions, orders
 
     async def decide(self, state: MatchState) -> dict[str, Action]:
-        """Solo las acciones, sin correr a los DT."""
         actions, _ = await self.decide_with_coach(state, {})
         return actions
 
     async def decide_coaches(
         self, coach_snapshots: dict[Side, CoachSnapshot]
     ) -> dict[Side, list[CoachOrder]]:
-        """Corre solo a los DT de los lados que tienen foto (llamada de penales)."""
         sides = list(coach_snapshots)
         calls = [
             self._workers[side].decide_coach(coach_snapshots[side]) for side in sides
