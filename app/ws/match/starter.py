@@ -170,12 +170,20 @@ class MatchStarter:
 
                 # es partido de liga
                 if league_id is not None:
+                    penalty_winner_id = None
+                    if live.shootout is not None:
+                        penalty_winner_id = (
+                            home_club_id
+                            if live.shootout.winner == Side.HOME
+                            else away_club_id
+                        )
                     await LeagueRepository(session).update_standings(
                         league_id,
                         home_club_id,
                         away_club_id,
                         live.state.home_score,
                         live.state.away_score,
+                        penalty_winner_id,
                     )
         except Exception:
             logger.exception("No se pudo guardar el resultado de %s", live.match_id)
