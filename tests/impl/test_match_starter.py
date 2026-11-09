@@ -12,7 +12,7 @@ from app.db.match import MatchDB, MatchStatus
 from app.db.player import PlayerDB
 from app.db.standings import LeagueStandingsDB
 from app.db.user import UserDB
-from app.engine.constants import TICKS_PER_MINUTE
+from app.engine.constants import FORMATIONS, TICKS_PER_MINUTE
 from app.ws.match import starter as starter_module
 from app.ws.match.runner import live_matches, start_match
 from app.ws.match.starter import MatchStarter
@@ -69,6 +69,8 @@ async def match_id(session):
             rival_club_id=away,
             status="accepted",
             match_id=match_id,
+            creator_formation="OFFENSIVE_LINE",
+            rival_formation="DEFENSIVE_LINE",
         )
     )
     await session.flush()
@@ -115,6 +117,9 @@ async def test_start_registers_match_with_info_and_sets_in_progress(
     assert len(live.state.players) == 6
     assert (live.info.home_club.name, live.info.away_club.name) == ("local", "visita")
     assert len(live.info.home_lineup) == len(live.info.away_lineup) == 6
+    # cada club con la formación que eligió en el amistoso
+    assert live.state.home_formation == FORMATIONS["OFFENSIVE_LINE"]
+    assert live.state.away_formation == FORMATIONS["DEFENSIVE_LINE"]
     assert (
         await get_match(session_factory, match_id)
     ).status == MatchStatus.in_progress

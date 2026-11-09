@@ -130,11 +130,22 @@ class MatchStarter:
                 league = await leagues.get(match.league_id)
                 squad = await leagues.get_squad_by_match(match_id)
                 total_ticks = league.match_duration_minutes * TICKS_PER_MINUTE
+                home_formation = away_formation = DEFAULT_FORMATION  # falta league_enrollments.formation (ING-139)
             else:
-                squad = await FriendlyRepository(session).get_squad_by_match(match_id)
+                friendlies = FriendlyRepository(session)
+                squad = await friendlies.get_squad_by_match(match_id)
                 total_ticks = FRIENDLY_TOTAL_TICKS
+                home_formation, away_formation = await friendlies.get_formations_by_match(
+                    match_id
+                )
 
-            state, codes = build_match_state(match, squad, total_ticks=total_ticks)
+            state, codes = build_match_state(
+                match,
+                squad,
+                total_ticks=total_ticks,
+                home_formation=home_formation,
+                away_formation=away_formation,
+            )
             info = build_match_info(home_club, away_club, squad)
 
             live = start_match(match_id, state, codes, info)
