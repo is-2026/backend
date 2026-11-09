@@ -96,7 +96,8 @@ class FriendliesApiImpl(BaseFriendliesApi):
             friendly = await FriendlyRepository(self._session).create(
                 creator_club_id=creator_club_id, 
                 hashed_password=hashed_passw,
-                players= data_players
+                players= data_players,
+                formation=create_friendly_input.formation.value,
 
             )
 
@@ -157,7 +158,9 @@ class FriendliesApiImpl(BaseFriendliesApi):
         ]
 
         try: 
-            friendly, match = await repo.accept(friendly_id, club_id, data_players) #repo.accept hace todo en una transaccion
+            friendly, match = await repo.accept(
+                friendly_id, club_id, data_players, join_friendly_input.formation.value
+            ) #repo.accept hace todo en una transaccion
         except FriendlyUnavailable as exc_info:        # por si los 2 usuarios llegan a la vez
             raise HTTPException(status_code=409, 
                                 detail="El amistoso ya no se encuentra disponible") from exc_info

@@ -116,6 +116,18 @@ async def test_create_friendly_private(api, mocks):
     assert result.is_private is True
  
  
+async def test_create_friendly_saves_formation(api, mocks):
+    mocks.friendly_repo.create.return_value = SimpleNamespace(
+        id=uuid.uuid4(), creator_club_id=CLUB_CREATOR, status="waiting_for_rival"
+    )
+
+    await api.create_friendly(
+        CreateFriendlyInput(formation="DEFENSIVE_LINE", players=make_squad(3)), CLUB_CREATOR
+    )
+
+    assert mocks.friendly_repo.create.await_args.kwargs["formation"] == "DEFENSIVE_LINE"
+
+
 async def test_create_friendly_players_other_club(api, mocks):
     mocks.player_repo.count_club_players.return_value = 5  # uno no es del club
  
@@ -291,6 +303,22 @@ async def test_join_friendly_ok(api, mocks):
     # 3. agendó el inicio del match
     api._schedule_start.assert_called_once_with(friendly.id, match.id)
  
+async def test_join_friendly_saves_formation(api, mocks):
+    friendly = friendly_waiting()
+    mocks.friendly_repo.get.return_value = friendly
+    mocks.friendly_repo.accept.return_value = (
+        friendly_accepted(friendly),
+        SimpleNamespace(id=uuid.uuid4()),
+    )
+
+    await api.join_friendly(
+        friendly.id,
+        JoinFriendlyInput(formation="OFFENSIVE_LINE", players=make_squad(3)),
+        CLUB_RIVAL,
+    )
+
+    assert mocks.friendly_repo.accept.await_args.args[3] == "OFFENSIVE_LINE"
+
 async def test_join_friendly_private_correct_password(api, mocks):
     friendly = friendly_waiting(hashed_password="hashed")
     match = SimpleNamespace(id=uuid.uuid4())
