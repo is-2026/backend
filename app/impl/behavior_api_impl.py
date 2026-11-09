@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.apis.behaviors_api_base import BaseBehaviorsApi
 from app.engine.validation import InvalidBehaviorCode, validate_behavior_code
 from app.models.behavior import Behavior
+from app.models.behavior_test_input import BehaviorTestInput, BehaviorTestStarted
+from app.ws.match.behavior_test import start_behavior_test
 from app.repositories.behavior_repository import (
     BehaviorRepository,
     DuplicateNameBehavior,
@@ -135,5 +137,16 @@ class BehaviorApiImpl(BaseBehaviorsApi):
             await repo.delete(behavior)
         except BehaviorInUse as exc_info:
             raise HTTPException(status_code = 409, detail= "El comportamiento esta siendo utilizado en una alineación") from exc_info
+
+    async def test_behavior(
+        self, behavior_test_input: BehaviorTestInput, club_id: uuid.UUID
+    ) -> BehaviorTestStarted:
+        try:
+            validate_behavior_code(behavior_test_input.code, "player")
+        except InvalidBehaviorCode as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+        match_id = await start_behavior_test(club_id, behavior_test_input.code)
+        return BehaviorTestStarted(match_id=match_id)
 
         
