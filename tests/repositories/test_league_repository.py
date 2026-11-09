@@ -591,3 +591,110 @@ def test_apply_score(goals_for, goals_against, won_shootout, points, result):
     assert getattr(row, result) == 1
     assert row.won + row.won_penalties + row.drawn + row.lost == 1
     assert (row.goals_for, row.goals_against) == (goals_for, goals_against)
+
+
+# chequeamos el ordenamiento segun los criterios de desempate
+async def test_get_standings_orders_by_points_goals_dif_goals_for_and_club_name(
+    session,
+):
+    c_alpha = await make_named_club(session, "Alpha")
+    c_beta = await make_named_club(session, "Beta")
+    c_gamma = await make_named_club(session, "Gamma")
+    c_delta = await make_named_club(session, "Delta")
+    c_epsilon = await make_named_club(session, "Epsilon")
+
+    league_id = await add_league(session, c_alpha, "Liga Orden", "started")
+
+    # filas con empates en distintos criterios para probar el ordenamiento:
+    # 1. Gamma: 6 pts, dif +2, GF 4
+    # 2. Delta: 3 pts, dif +2, GF 3 (gana por diferencia de gol contra Beta/Alpha/Epsilon)
+    # 3. Beta:  3 pts, dif +1, GF 5 (gana por goles a favor contra Alpha/Epsilon)
+    # 4. Alpha: 3 pts, dif +1, GF 2 (gana por nombre ascendente contra Epsilon)
+    # 5. Epsilon: 3 pts, dif +1, GF 2
+    session.add_all(
+        [
+            LeagueStandingsDB(
+                league_id=league_id,
+                club_id=c_epsilon,
+                rank=5,
+                points=3,
+                matches_played=2,
+                won=1,
+                drawn=0,
+                lost=1,
+                goals_for=2,
+                goals_against=1,
+                goals_dif=1,
+            ),
+            LeagueStandingsDB(
+                league_id=league_id,
+                club_id=c_alpha,
+                rank=4,
+                points=3,
+                matches_played=2,
+                won=1,
+                drawn=0,
+                lost=1,
+                goals_for=2,
+                goals_against=1,
+                goals_dif=1,
+            ),
+            LeagueStandingsDB(
+                league_id=league_id,
+                club_id=c_beta,
+                rank=3,
+                points=3,
+                matches_played=2,
+                won=1,
+                drawn=0,
+                lost=1,
+                goals_for=5,
+                goals_against=4,
+                goals_dif=1,
+            ),
+            LeagueStandingsDB(
+                league_id=league_id,
+                club_id=c_delta,
+                rank=2,
+                points=3,
+                matches_played=2,
+                won=1,
+                drawn=0,
+                lost=1,
+                goals_for=3,
+                goals_against=1,
+                goals_dif=2,
+            ),
+            LeagueStandingsDB(
+                league_id=league_id,
+                club_id=c_gamma,
+                rank=1,
+                points=6,
+                matches_played=2,
+                won=2,
+                drawn=0,
+                lost=0,
+                goals_for=4,
+                goals_against=2,
+                goals_dif=2,
+            ),
+        ]
+    )
+    await session.commit()
+
+    rows = await LeagueRepository(session).get_standings(league_id)
+
+    assert [name for _, name in rows] == [
+        "Gamma",
+        "Delta",
+        "Beta",
+        "Alpha",
+        "Epsilon",
+    ]
+    assert [st.club_id for st, _ in rows] == [
+        c_gamma,
+        c_delta,
+        c_beta,
+        c_alpha,
+        c_epsilon,
+    ]

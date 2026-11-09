@@ -422,3 +422,23 @@ class LeagueRepository:
             .values(status="finished")
         )
         await self._session.commit()
+
+    async def get_standings(
+        self, league_id: uuid.UUID
+    ) -> list[tuple[LeagueStandingsDB, str]]:
+        """Devuelve las filas de la tabla de posiciones junto con el nombre del club, y ya
+        ordenadas por: Puntos (desc), Diferencia de gol (desc), Goles a favor (desc) y Nombre del club (asc)."""
+        result = await self._session.execute(
+            select(LeagueStandingsDB, ClubDB.club_name)
+            .join(ClubDB, ClubDB.id == LeagueStandingsDB.club_id)
+            .where(LeagueStandingsDB.league_id == league_id)
+        )
+        return sorted(
+            result.all(),
+            key=lambda item: (
+                -item[0].points,
+                -item[0].goals_dif,
+                -item[0].goals_for,
+                item[1].lower(),
+            ),
+        )
