@@ -360,3 +360,37 @@ async def get_league_lineup(
     return await BaseLeaguesApi.subclasses[0](session).get_league_lineup(
         league_id, club
     )
+
+
+@router.put(
+    "/leagues/{league_id}/lineup",
+    responses={
+        200: {"model": SubmitLineupInput, "description": "Alineación guardada"},
+        400: {
+            "model": Error,
+            "description": "Los jugadores no son exactamente los 6 convocados del club en la liga, no son 3 titulares y 3 suplentes, hay repetidos, un titular no tiene comportamiento, un comportamiento es de otro club o de tipo DT, o la formación no existe",
+        },
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
+        403: {"model": Error, "description": "El club no está inscripto en la liga"},
+        404: {"model": Error, "description": "Recurso no encontrado"},
+        409: {"model": Error, "description": "La liga está terminada o cancelada"},
+    },
+    tags=["Leagues"],
+    summary="Cambiar mi alineación en la liga",
+    response_model_by_alias=True,
+)
+async def update_league_lineup(
+    league_id: UUID = Path(..., description=""),
+    submit_lineup_input: SubmitLineupInput = Body(..., description=""),
+    token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
+) -> SubmitLineupInput:
+    if not BaseLeaguesApi.subclasses:
+        raise HTTPException(status_code=500, detail="Not implemented")
+    return await BaseLeaguesApi.subclasses[0](session).update_league_lineup(
+        league_id, submit_lineup_input, club
+    )
