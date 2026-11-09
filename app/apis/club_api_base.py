@@ -21,6 +21,7 @@ class BaseClubApi:
         BaseClubApi.subclasses = BaseClubApi.subclasses + (cls,)
     async def get_my_club(
         self,
+        club_id: UUID,
     ) -> Club:
         """Identifica al club mediante el token de sesión."""
         ...
