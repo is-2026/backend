@@ -2,6 +2,7 @@ import asyncio
 import logging
 import random
 import uuid
+import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
@@ -79,6 +80,7 @@ def start_match(
     start_delay: float = START_DELAY_SECONDS,
     cooling_break_duration: float = COOLING_BREAK_SECONDS,
     halftime_duration: float = HALFTIME_SECONDS,
+    pauses: bool = True
 ) -> LiveMatch:
     """Prepara el partido, lo anota en live_matches y lo larga como tarea de fondo.
     codes = player_id -> código del comportamiento.
@@ -99,7 +101,7 @@ def start_match(
     live_matches[match_id] = live
     live.task = asyncio.create_task(
         run_match(
-            live, tick_interval, start_delay, cooling_break_duration, halftime_duration
+            live, tick_interval, start_delay, cooling_break_duration, halftime_duration, pauses=pauses
         )
     )
     return live
@@ -176,6 +178,13 @@ async def _clear(live: LiveMatch) -> None:
     await match_connections.close_all(live.match_id)
     live.executor.close()
 
+async def stop_match(live: LiveMatch) -> None:
+    """Corta un partido en curso y lo limpia, aunque la tarea no haya llegado a arrancar."""
+    if live.task is not None:
+        live.task.cancel()
+        with contextlib.suppress(asyncio.CancelledError): # esperamos a que termine de cortarse (el CancelledError es lo esperado)
+            await live.task
+    await _clear(live) # si el finally de run_match nunca se corrio limpiamos aca
 
 async def run_match(
     live: LiveMatch,
@@ -183,13 +192,14 @@ async def run_match(
     start_delay: float = START_DELAY_SECONDS,
     cooling_break_duration: float = COOLING_BREAK_SECONDS,
     halftime_duration: float = HALFTIME_SECONDS,
+    pauses: bool = True
 ) -> None:
     """Espera start_delay, juega hasta total_ticks con las pausas en el medio
     y avisa el final. Pase lo que pase, al final cierra el partido con _clear."""
     loop = asyncio.get_running_loop()
     rng = random.Random()
     try:
-        pause_schedule = pauses_schedule(live.state.total_ticks)
+        pause_schedule = pauses_schedule(live.state.total_ticks) if pauses else {}
         await asyncio.sleep(start_delay)
         live.phase = Phase.PLAYING
         next_tick = loop.time()
