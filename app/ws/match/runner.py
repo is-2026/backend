@@ -12,6 +12,12 @@ from app.engine.engine import kickoff, step
 from app.engine.executor import BehaviorExecutor
 from app.engine.state import MatchState
 from app.ws.connection_manager import ConnectionManager
+from app.ws.match.coach import (
+    CoachSetup,
+    apply_coach_orders,
+    coach_codes,
+    coach_snapshots,
+)
 from app.ws.match.info import MatchInfo
 from app.ws.match.messages import (
     goal_message,
@@ -61,6 +67,9 @@ class LiveMatch:
     pending_substitutions: dict[str, PendingSubstitution] = field(default_factory=dict)
     # cuantas pausas empezaron
     pauses_started: int = 0
+    # team_id -> DT del club. Se fija al arrancar: activar o quitar el DT
+    # durante el partido no lo cambia. Un club que no está juega sin DT.
+    coaches: dict[str, CoachSetup] = field(default_factory=dict)
     # referencia a la tarea, si nadie la guarda, se puede perder
     task: asyncio.Task | None = None
 
@@ -80,21 +89,25 @@ def start_match(
     start_delay: float = START_DELAY_SECONDS,
     cooling_break_duration: float = COOLING_BREAK_SECONDS,
     halftime_duration: float = HALFTIME_SECONDS,
-    pauses: bool = True
+    pauses: bool = True,
+    coaches: dict[str, CoachSetup] | None = None,
 ) -> LiveMatch:
     """Prepara el partido, lo anota en live_matches y lo larga como tarea de fondo.
     codes = player_id -> código del comportamiento.
+    coaches = team_id -> DT del club (los clubes sin DT no aparecen).
     Es sync pero usa create_task: hay que llamarla dentro del event loop."""
     if match_id in live_matches:
         return live_matches[match_id]  # ya se está jugando: no lo largamos dos veces
 
+    coaches = coaches or {}
     kickoff(state)
     live = LiveMatch(
         match_id=match_id,
         state=state,
-        executor=BehaviorExecutor(state, codes),
+        executor=BehaviorExecutor(state, codes, coach_codes(coaches, info)),
         info=info,
         match_start=datetime.now(timezone.utc) + timedelta(seconds=start_delay),
+        coaches=coaches,
     )
     # el que se conecta durante la espera ya ve a los jugadores en formación (tick 0)
     live.last_state = _state_payload(live)
@@ -150,8 +163,11 @@ async def _pause(live: LiveMatch, pause: Pause, seconds: float) -> None:
 
 
 async def _tick(live: LiveMatch, rng: random.Random) -> None:
-    """Avanza el partido un tick: decide -> step -> goal(s) -> matchState."""
-    actions = await live.executor.decide(live.state)
+    """Avanza el partido un tick:
+    decide (jugadores y DT) -> step -> goal(s) -> matchState -> órdenes del DT."""
+    actions, orders = await live.executor.decide_with_coach(
+        live.state, coach_snapshots(live)
+    )
     goals = step(live.state, actions, rng)
 
     for goal in goals:
@@ -162,6 +178,11 @@ async def _tick(live: LiveMatch, rng: random.Random) -> None:
 
     live.last_state = _state_payload(live)
     await match_connections.broadcast(live.match_id, live.last_state)
+
+    # las órdenes se aplican después del step: los jugadores de este tick ya
+    # decidieron, así que un cambio de comportamiento rige desde el tick siguiente
+    for message in apply_coach_orders(live, orders):
+        await match_connections.broadcast(live.match_id, message)
 
 
 async def _notify_finish(live: LiveMatch) -> None:
