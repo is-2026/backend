@@ -216,17 +216,22 @@ def match_started_message(
     )
 
 
-def match_state_message(match_id: str, state: MatchState) -> MatchStateMessage:
-    """Arma el matchState desde el estado del motor (ya está en coordenadas absolutas)."""
+def match_state_message(
+    match_id: str, state: MatchState, mirrored: bool = False
+) -> MatchStateMessage:
+    """Arma el matchState desde el estado del motor (ya está en coordenadas absolutas).
+    Con mirrored da vuelta la cancha (x, y) -> (-x, -y), igual que el motor con el visitante:
+    en la tanda, así los penales del visitante también se ven en el arco derecho."""
+    k = -1 if mirrored else 1
     players = [
-        PlayerPosition(player_id=p.id, position=Position(x=p.x, y=p.y))
+        PlayerPosition(player_id=p.id, position=Position(x=k * p.x, y=k * p.y))
         for p in state.players
     ]
     data = MatchStateData(
         match_id=match_id,
         tick=state.tick,
         players=players,
-        ball_position=Position(x=state.ball.x, y=state.ball.y),
+        ball_position=Position(x=k * state.ball.x, y=k * state.ball.y),
     )
     return MatchStateMessage(data=data)
 

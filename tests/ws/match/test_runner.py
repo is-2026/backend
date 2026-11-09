@@ -252,6 +252,20 @@ async def test_penalties_alternate_with_default_order(live, client):
     ]
 
 
+async def test_all_penalties_are_shown_on_the_right_goal(live, client):
+    live.allows_draws = False
+
+    await run_match(live, **NO_WAIT)
+
+    # en el motor el visitante patea hacia -x: sus matchState salen espejados
+    for m in after_shootout_start(client.sent):
+        if m["type"] == "penaltyKick":
+            kicker, defender = m["data"]["kicker_id"], m["data"]["defender_id"]
+        elif m["type"] == "matchState":
+            x = {p["player_id"]: p["position"]["x"] for p in m["data"]["players"]}
+            assert x[kicker] < 0 < x[defender]
+
+
 @pytest.mark.parametrize(
     "allows_draws, home_score",
     [(True, 0), (False, 1)],  # empate en liga con empates, o hay ganador

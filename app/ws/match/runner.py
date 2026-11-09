@@ -227,7 +227,11 @@ async def _penalty_kick(
     while True:
         actions = await live.executor.decide(kick)
         scored = kick_scored(step(kick, actions, rng))
-        live.last_state = match_state_message(match_id, kick).model_dump(mode="json")
+        # en el motor el visitante patea al arco izquierdo: lo espejamos para que el front
+        # vea todos los penales en el arco derecho
+        live.last_state = match_state_message(
+            match_id, kick, mirrored=side == Side.AWAY
+        ).model_dump(mode="json")
         await match_connections.broadcast(live.match_id, live.last_state)
         if scored or kick_stopped(kick, defender):
             break
