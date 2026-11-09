@@ -6,12 +6,16 @@ import pytest
 from fastapi import HTTPException
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.db.club import ClubDB
+from app.db.friendly import FriendlyDB
+from app.db.user import UserDB
 from app.impl import friendlies_api_impl
 from app.impl.friendlies_api_impl import FriendliesApiImpl, _validate_squad
 from app.models.create_friendly_input import CreateFriendlyInput
 from app.models.join_friendly_input import JoinFriendlyInput
 from app.models.squad_player_input import SquadPlayerInput
 from app.repositories.friendly_repository import FriendlyUnavailable, InvalidSquad
+from app.security.tokens import create_access_token
 
 
 CANT_JUGADORES = 6
@@ -386,4 +390,112 @@ async def test_list_friendlies_returns_empty(mocked_repo_class):
     assert result == []
     # sin amistosos no consulta los nombres
     mocked_repo.get_club_names.assert_not_called()
-    mocked_repo.list_available_friendlies.assert_awaited_once()
+    mocked_repo.list_available_friendlies.assert_awaited_once_with(club_name=None)
+
+
+@patch("app.impl.friendlies_api_impl.FriendlyRepository")
+async def test_list_friendlies_with_club_name_filter(mocked_repo_class):
+    mocked_repo = MagicMock()
+    friendly_id = uuid.uuid4()
+    club_id = uuid.uuid4()
+
+    mock_friendly = MagicMock()
+    mock_friendly.id = friendly_id
+    mock_friendly.creator_club_id = club_id
+    mock_friendly.rival_club_id = None
+    mock_friendly.status = "waiting_for_rival"
+    mock_friendly.match_id = None
+
+    mocked_repo.list_available_friendlies = AsyncMock(return_value=[mock_friendly])
+    mocked_repo.get_club_names = AsyncMock(return_value={club_id: "River Plate"})
+    mocked_repo.is_private.return_value = False
+    mocked_repo_class.return_value = mocked_repo
+
+    api = FriendliesApiImpl(MagicMock(), lobby_manager=MagicMock())
+    result = await api.list_friendlies(club_name="river")
+
+    mocked_repo.list_available_friendlies.assert_awaited_once_with(club_name="river")
+    assert len(result) == 1
+    assert result[0].id == friendly_id
+    assert result[0].creator_club_name == "River Plate"
+
+
+async def test_endpoint_list_friendlies_filters_by_club_name_case_insensitive(
+    client, session
+):
+    clubs = {}
+    for club_name in ("river plate", "Club River", "RIVER FC", "Boca Juniors"):
+        user = UserDB(
+            id=uuid.uuid4(),
+            email=f"{uuid.uuid4()}@example.com",
+            hashed_password="hash",
+        )
+        session.add(user)
+        await session.flush()
+        club = ClubDB(
+            id=uuid.uuid4(),
+            club_name=club_name,
+            avatar_url="https://example.com/a.png",
+            user_id=user.id,
+        )
+        session.add(club)
+        clubs[club_name] = (club, user)
+    await session.flush()
+
+    session.add_all(
+        [
+            FriendlyDB(
+                id=uuid.uuid4(),
+                creator_club_id=clubs["river plate"][0].id,
+                status="waiting_for_rival",
+            ),
+            FriendlyDB(
+                id=uuid.uuid4(),
+                creator_club_id=clubs["Club River"][0].id,
+                status="waiting_for_rival",
+            ),
+            FriendlyDB(
+                id=uuid.uuid4(),
+                creator_club_id=clubs["RIVER FC"][0].id,
+                status="waiting_for_rival",
+            ),
+            FriendlyDB(
+                id=uuid.uuid4(),
+                creator_club_id=clubs["Boca Juniors"][0].id,
+                status="waiting_for_rival",
+            ),
+            FriendlyDB(
+                id=uuid.uuid4(),
+                creator_club_id=clubs["river plate"][0].id,
+                status="accepted",
+            ),
+        ]
+    )
+    await session.commit()
+
+    token = create_access_token(clubs["Boca Juniors"][1].id)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # sin club_name devuelve todos los waiting_for_rival
+    r_all = await client.get("/friendlies", headers=headers)
+    assert r_all.status_code == 200
+    assert len(r_all.json()) == 4
+    assert all(item["creator_club_name"] is not None for item in r_all.json())
+
+    # con club_name=river filtra sin distinguir mayúsculas
+    r_filtered = await client.get("/friendlies?club_name=river", headers=headers)
+    assert r_filtered.status_code == 200
+    data = r_filtered.json()
+    assert len(data) == 3
+    assert {item["creator_club_name"] for item in data} == {
+        "river plate",
+        "Club River",
+        "RIVER FC",
+    }
+
+
+async def test_endpoint_list_friendlies_without_token_returns_401(client):
+    r = await client.get("/friendlies")
+
+    assert r.status_code == 401
+    assert "message" in r.json()

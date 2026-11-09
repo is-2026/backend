@@ -2,7 +2,7 @@
 
 from typing import ClassVar, Dict, List, Tuple  # noqa: F401
 
-from typing import Any, List
+from typing import Any, List, Optional
 from uuid import UUID
 from app.models.create_friendly_input import CreateFriendlyInput
 from app.models.error import Error
@@ -18,6 +18,7 @@ class BaseFriendliesApi:
         BaseFriendliesApi.subclasses = BaseFriendliesApi.subclasses + (cls,)
     async def list_friendlies(
         self,
+        club_name: Optional[str] = None,
     ) -> List[Friendly]:
         """Devuelve una lista de amistosos que están esperando rival, incluyendo públicos y privados."""
         ...
