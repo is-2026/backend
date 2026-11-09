@@ -23,6 +23,7 @@ from app.impl.league_api_impl import LeaguesApiImpl
 from app.models.create_league_input import CreateLeagueInput
 from app.models.join_league_input import JoinLeagueInput
 from app.models.squad_player_input import SquadPlayerInput
+from app.models.submit_lineup_input import SubmitLineupInput
 from app.security.tokens import create_access_token
 
 CLUB = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
@@ -1254,3 +1255,106 @@ async def test_endpoint_get_standings_not_started_returns_409(
 
     assert r.status_code == 409
     assert "message" in r.json()
+
+
+# --- GET y PUT /leagues/{league_id}/lineup ---
+
+
+def make_enrolled_players():
+    # los 6 convocados del club: los 3 primeros titulares con comportamiento
+    return [
+        SimpleNamespace(
+            player_id=uuid.uuid4(),
+            is_starter=i < 3,
+            behavior_id=uuid.uuid4() if i < 3 else None,
+        )
+        for i in range(6)
+    ]
+
+
+def make_lineup_input(players, formation="OFFENSIVE_LINE"):
+    return SubmitLineupInput(
+        formation=formation,
+        players=[
+            SquadPlayerInput(
+                player_id=p.player_id,
+                is_starter=p.is_starter,
+                behavior_id=p.behavior_id,
+            )
+            for p in players
+        ],
+    )
+
+
+def mock_lineup(mocks, players, status="started"):
+    mocks.league_repo.get.return_value = SimpleNamespace(
+        id=uuid.uuid4(), status=status
+    )
+    mocks.league_repo.get_enrollment.return_value = SimpleNamespace(
+        id=uuid.uuid4(), formation="TRIANGLE"
+    )
+    mocks.league_repo.list_enrollment_players.return_value = players
+    # comportamiento del club y de jugador
+    mocks.session.get = AsyncMock(
+        return_value=SimpleNamespace(club_id=CLUB.id, kind="player")
+    )
+
+async def test_get_league_lineup_success(api, mocks):
+    mock_lineup(mocks, make_enrolled_players())
+
+    result = await api.get_league_lineup(uuid.uuid4(), CLUB)
+
+    assert result.formation == "TRIANGLE"
+    assert len(result.players) == 6
+
+
+async def test_update_league_lineup_success(api, mocks):
+    players = make_enrolled_players()
+    mock_lineup(mocks, players)
+
+    await api.update_league_lineup(uuid.uuid4(), make_lineup_input(players), CLUB)
+
+    mocks.league_repo.update_lineup.assert_awaited_once()
+
+
+@pytest.mark.parametrize("status", ["finished", "cancelled"])
+async def test_update_league_lineup_returns_409(api, mocks, status):
+    players = make_enrolled_players()
+    mock_lineup(mocks, players, status=status)
+
+    with pytest.raises(HTTPException) as error:
+        await api.update_league_lineup(uuid.uuid4(), make_lineup_input(players), CLUB)
+
+    assert error.value.status_code == 409
+
+
+# comportamiento que no existe, de otro club o de DT
+@pytest.mark.parametrize(
+    "behavior",
+    [
+        None,
+        SimpleNamespace(club_id=uuid.uuid4(), kind="player"),
+        SimpleNamespace(club_id=CLUB.id, kind="coach"),
+    ],
+)
+async def test_update_league_lineup_invalid_behavior_returns_400(api, mocks, behavior):
+    players = make_enrolled_players()
+    mock_lineup(mocks, players)
+    mocks.session.get = AsyncMock(return_value=behavior)
+
+    with pytest.raises(HTTPException) as error:
+        await api.update_league_lineup(uuid.uuid4(), make_lineup_input(players), CLUB)
+
+    assert error.value.status_code == 400
+
+async def test_update_league_lineup_player_not_enrolled_returns_400(api, mocks):
+    players = make_enrolled_players()
+    mock_lineup(mocks, players)
+    # mandamos un suplente que no es convocado (lista nueva, no tocamos la del mock)
+    other = SimpleNamespace(player_id=uuid.uuid4(), is_starter=False, behavior_id=None)
+    sent = players[:5] + [other]
+
+    with pytest.raises(HTTPException) as error:
+        await api.update_league_lineup(uuid.uuid4(), make_lineup_input(sent), CLUB)
+
+    assert error.value.status_code == 400
