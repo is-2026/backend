@@ -5,15 +5,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
-# ver de agregar restricciones:
-# points=drawn+won*3, played=won+drawn+lost, goals_dif=goals_for-goals_against
-
 
 class LeagueStandingsDB(Base):
     __tablename__ = "league_standings"
     __table_args__ = (
         UniqueConstraint("league_id", "rank"),
     )  # unicidad de ranking (i.e. dos clubes no pueden compartir la misma posicion en la tabla de una liga)
+    # tener en cuenta al momento de recalcular posiciones, podria haber ranks duplicados intermedios durante el UPDATE
 
     # PK compuesta: league_id+club_id
     league_id: Mapped[uuid.UUID] = mapped_column(

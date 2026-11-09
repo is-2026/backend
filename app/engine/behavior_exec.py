@@ -41,6 +41,12 @@ SAFE_BUILTINS = (
     "int",
     "bool",
     "str",
+    "Exception",
+    "ValueError",
+    "TypeError",
+    "ZeroDivisionError",
+    "IndexError",
+    "KeyError",
 )
 
 
@@ -239,6 +245,8 @@ class PlayerBrain:
             return None
         try:
             self._decide()
+        except MemoryError:
+            raise  # para que no me lo coma el except Exception
         except Exception:
             logger.exception(
                 "El comportamiento del jugador %s falló en decide_action()",
@@ -246,6 +254,15 @@ class PlayerBrain:
             )
             return None
         return self._action
+
+
+def load_brain(player: PlayerState, code: str) -> PlayerBrain | None:
+    try:
+        compiled_code = compile_behavior(code, player.id)
+    except InvalidBehaviorCode:
+        logger.exception("El comportamiento del jugador %s no compila", player.id)
+        return None
+    return PlayerBrain(player, compiled_code)
 
 
 def create_brains(state: MatchState, codes: dict[str, str]) -> dict[str, PlayerBrain]:
@@ -257,12 +274,10 @@ def create_brains(state: MatchState, codes: dict[str, str]) -> dict[str, PlayerB
         code = codes.get(player.id)
         if code is None:
             continue
-        try:
-            compiled_code = compile_behavior(code, player.id)
-        except InvalidBehaviorCode:
-            logger.exception("El comportamiento del jugador %s no compila", player.id)
-            continue
-        brains[player.id] = PlayerBrain(player, compiled_code)
+        brain = load_brain(player, code)
+        # si no compila que quede con el brain viejo
+        if brain is not None:
+            brains[player.id] = brain
     return brains
 
 

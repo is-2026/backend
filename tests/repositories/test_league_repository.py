@@ -41,6 +41,25 @@ async def make_club(session) -> uuid.UUID:
     return club_id
 
 
+async def make_named_club(session, name: str) -> uuid.UUID:
+    user_id = uuid.uuid4()
+    session.add(
+        UserDB(id=user_id, email=f"{user_id}@test.com", hashed_password="hash")
+    )
+    await session.flush()
+    club_id = uuid.uuid4()
+    session.add(
+        ClubDB(
+            id=club_id,
+            club_name=name,
+            avatar_url="https://img.com/avatar.png",
+            user_id=user_id,
+        )
+    )
+    await session.commit()
+    return club_id
+
+
 async def make_squad(session, club_id) -> list[SquadPlayerData]:
     """6 jugadores y 3 comportamientos reales. Los 3 primeros son titulares."""
     players = [
@@ -400,3 +419,90 @@ async def test_start_league_success(session, session_factory):
         assert partidos_por_fecha[1] == 2
         assert partidos_por_fecha[2] == 2
         assert partidos_por_fecha[3] == 2
+
+
+async def test_get_squad_by_match_returns_enrolled_players_ordered(session):
+    home = await make_named_club(session, "Local")
+    away = await make_named_club(session, "Visita")
+    other = await make_named_club(session, "Tercero")
+
+    league_id = await add_league(session, home, "Liga", "started")
+    repo = LeagueRepository(session)
+    home_squad = await make_squad(session, home)
+    away_squad = await make_squad(session, away)
+    other_squad = await make_squad(session, other)
+    # invertimos titulares y suplentes de home: titulares pasan a ser camisetas 4, 5, 6
+    b_id = home_squad[0].behavior_id
+    home_squad_custom = [
+        SquadPlayerData(sp.player_id, i >= 3, b_id if i >= 3 else None)
+        for i, sp in enumerate(home_squad)
+    ]
+
+    await repo.add_enrollment(league_id, home, home_squad_custom)
+    await repo.add_enrollment(league_id, away, away_squad)
+    await repo.add_enrollment(league_id, other, other_squad)
+
+    match_id = uuid.uuid4()
+    session.add(
+        MatchDB(
+            id=match_id,
+            home_club_id=home,
+            away_club_id=away,
+            league_id=league_id,
+            round_number=1,
+        )
+    )
+    await session.commit()
+
+    squad = await repo.get_squad_by_match(match_id)
+
+    assert len(squad) == 12
+    home_members = [m for m in squad if m.club_id == home]
+    assert [m.player.number for m in home_members] == [4, 5, 6, 1, 2, 3]
+    assert [m.is_starter for m in home_members] == [True] * 3 + [False] * 3
+    assert all(m.behavior is not None for m in home_members[:3])
+    assert all(m.behavior is None for m in home_members[3:])
+
+
+async def test_update_standings_and_finish_league(session, session_factory):
+    # A, B, C en orden alfabetico inicial (ranks 1, 2, 3)
+    club_a = await make_named_club(session, "Arsenal")
+    club_b = await make_named_club(session, "Boca")
+    club_c = await make_named_club(session, "Chacarita")
+
+    league_id = await add_league(session, club_a, "Liga", "not_started")
+    repo = LeagueRepository(session)
+    for c in (club_a, club_b, club_c):
+        await repo.add_enrollment(league_id, c, await make_squad(session, club_c if False else c))
+
+    await repo.start_league(league_id)
+
+    # Fecha 1: Chacarita (3) le gana 2-0 a Arsenal (1) -> intercambian ranks sin violar restriccion
+    await repo.update_standings(league_id, club_c, club_a, home_score=2, away_score=0)
+
+    # Fecha 2: Boca empata 1-1 con Arsenal
+    await repo.update_standings(league_id, club_b, club_a, home_score=1, away_score=1)
+
+    await repo.finish_league(league_id)
+
+    async with session_factory() as other:
+        league = await other.get(LeagueDB, league_id)
+        assert league.status == "finished"
+
+        rows = (
+            await other.scalars(
+                select(LeagueStandingsDB)
+                .where(LeagueStandingsDB.league_id == league_id)
+                .order_by(LeagueStandingsDB.rank)
+            )
+        ).all()
+
+    # chequeo el estado final de la tabla:
+    # 1° Chacarita (3 pts, +2), 2° Boca (1 pt, 0), 3° Arsenal (1 pt, -2)
+    assert [r.club_id for r in rows] == [club_c, club_b, club_a]
+    assert [r.rank for r in rows] == [1, 2, 3]
+
+    chaca, boca, arsenal = rows
+    assert (chaca.points, chaca.matches_played, chaca.won, chaca.drawn, chaca.lost, chaca.goals_for, chaca.goals_against, chaca.goals_dif) == (3, 1, 1, 0, 0, 2, 0, 2)
+    assert (boca.points, boca.matches_played, boca.won, boca.drawn, boca.lost, boca.goals_for, boca.goals_against, boca.goals_dif) == (1, 1, 0, 1, 0, 1, 1, 0)
+    assert (arsenal.points, arsenal.matches_played, arsenal.won, arsenal.drawn, arsenal.lost, arsenal.goals_for, arsenal.goals_against, arsenal.goals_dif) == (1, 2, 0, 1, 1, 1, 3, -2)

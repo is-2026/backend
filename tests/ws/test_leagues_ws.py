@@ -13,6 +13,8 @@ from app.ws.lobby_league import league_lobby_connection
 
 LEAGUE = uuid.uuid4()  # liga not_started
 LEAGUE_STARTED = uuid.uuid4()
+LEAGUE_FINISHED = uuid.uuid4()
+LEAGUE_CANCELLED = uuid.uuid4()
 
 
 class _FakeSession:  # para simular la consulta
@@ -24,7 +26,7 @@ class _FakeSession:  # para simular la consulta
 
 
 class _FakeLeagueRepository:
-    """Existen ligas no iniciadas y ligas iniciadas"""
+    """Existen ligas no iniciadas, iniciadas, terminadas y canceladas"""
 
     def __init__(self, session=None):
         self._session = session
@@ -34,6 +36,10 @@ class _FakeLeagueRepository:
             return SimpleNamespace(status="not_started")
         if league_id == LEAGUE_STARTED:
             return SimpleNamespace(status="started")
+        if league_id == LEAGUE_FINISHED:
+            return SimpleNamespace(status="finished")
+        if league_id == LEAGUE_CANCELLED:
+            return SimpleNamespace(status="cancelled")
         return None
 
 
@@ -97,9 +103,22 @@ def test_league_not_exist(client):
     assert _close_code(client, _url(uuid.uuid4(), token)) == 4404
 
 
-def test_league_started(client):
+def test_league_started_token_valid(client):
     token = create_access_token(uuid.uuid4())  # token valido
-    assert _close_code(client, _url(LEAGUE_STARTED, token)) == 4404
+    with client.websocket_connect(_url(LEAGUE_STARTED, token)):
+        _wait_until_connected(
+            LEAGUE_STARTED, 1
+        )  # permite conectarse cuando la liga esta en curso
+
+
+def test_league_finished_closes_4404(client):
+    token = create_access_token(uuid.uuid4())  # token valido
+    assert _close_code(client, _url(LEAGUE_FINISHED, token)) == 4404
+
+
+def test_league_cancelled_closes_4404(client):
+    token = create_access_token(uuid.uuid4())  # token valido
+    assert _close_code(client, _url(LEAGUE_CANCELLED, token)) == 4404
 
 
 def test_league_not_started_token_valid(client):

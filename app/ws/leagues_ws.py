@@ -29,7 +29,8 @@ async def league_lobby(
         # sesion como a los endpoints que implementamos
         league = await LeagueRepository(session).get(league_id)  # buscamos la liga
 
-    if league is None or league.status != "not_started":
+    # permite conectarse si la liga esta "started" (espectadores)
+    if league is None or league.status not in ("not_started", "started"):
         await ws.close(code=NOT_FOUND)  # Cierro el ws (4404)
         return
 
