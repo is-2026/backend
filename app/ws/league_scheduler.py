@@ -81,14 +81,16 @@ class LeagueScheduler:
             # llamo a finish_league para persistir los datos
             async with self._session_factory() as session:
                 await LeagueRepository(session).finish_league(league_id)
-            # luego broadcast de leagueFinished y cierro todas las conexiones con 1000
+            # luego broadcast de leagueFinished
             await self._lobby.broadcast(
                 league_id,
                 {"type": "leagueFinished", "data": {"league_id": str(league_id)}},
             )
-            await self._lobby.close_all(league_id, code=NORMAL)
         except Exception:
             logger.exception("Falló la ejecución de la liga %s", league_id)
+        finally:
+            # en cualquier caso, cierro todas las conexiones con 1000
+            await self._lobby.close_all(league_id, code=NORMAL)
 
 
 league_scheduler = LeagueScheduler()
