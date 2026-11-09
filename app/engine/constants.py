@@ -49,7 +49,14 @@ MAX_PENALTIES = 20
 
 KICKER_FORMATION = ((-0.5, 0.0), (-0.5, 0.0), (-0.5, 0.0))
 # el arquero arranca 2 m adelante de su arco: en la línea no se ve bien
-GOALIE_FORMATION = ((-18.0, 0.0), (-18.0, 0.0), (-18.0, 0.0))
+GOALIE_LINE_X = -18.0
+GOALIE_FORMATION = ((GOALIE_LINE_X, 0.0),) * 3
+# el arquero corrige hacia la pelota cuando la tiene a esta distancia (m),
+# más lento que la estirada, así si eligió mal el palo no siempre llega
+GOALIE_REACTION_DISTANCE = 3.0
+GOALIE_CORRECTION_SPEED_PCT = 40
+# más cerca que esto de donde quiere ir no se mueve: si no, se pasa y vuelve (tiembla)
+GOALIE_STOP_DISTANCE = 0.5
 
 # Para la sandbox
 # Cuánto tiempo le doy a cada decide_action().

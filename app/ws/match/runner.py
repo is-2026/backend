@@ -10,7 +10,13 @@ from enum import StrEnum
 from app.engine.constants import DT, PENALTIES_PER_TEAM
 from app.engine.engine import kickoff, step
 from app.engine.executor import BehaviorExecutor
-from app.engine.penalties import Shootout, kick_scored, kick_stopped, penalty_state
+from app.engine.penalties import (
+    Goalie,
+    Shootout,
+    kick_scored,
+    kick_stopped,
+    penalty_state,
+)
 from app.engine.state import MatchState, PlayerState, Side
 from app.ws.connection_manager import ConnectionManager
 from app.ws.match.info import MatchInfo
@@ -238,11 +244,13 @@ async def _penalty_kick(
     await match_connections.broadcast(live.match_id, live.last_state)
     await asyncio.sleep(penalty_pause)
 
+    goalie = Goalie(defender, rng)
     # copio lo mismo que hace el runner normal
     loop = asyncio.get_running_loop()
     next_tick = loop.time()
     while True:
         actions = await live.executor.decide(kick)
+        actions[defender.id] = goalie.action(kick)  # el que ataja no usa su comportamiento
         scored = kick_scored(step(kick, actions, rng))
         # en el motor el visitante patea al arco izquierdo: lo espejamos para que el front
         # vea todos los penales en el arco derecho
