@@ -12,6 +12,7 @@ from app.models.league_detail import LeagueDetail
 from app.models.league_summary import LeagueSummary
 from app.models.match import Match
 from app.models.standings_item import StandingsItem
+from app.models.submit_lineup_input import SubmitLineupInput
 from app.security_api import get_token_bearerAuth
 
 class BaseLeaguesApi:
@@ -98,4 +99,13 @@ class BaseLeaguesApi:
         self,
         league_id: UUID,
     ) -> List[StandingsItem]:
+        ...
+
+
+    async def get_league_lineup(
+        self,
+        league_id: UUID,
+        club_id: UUID,
+    ) -> SubmitLineupInput:
+        """Devuelve la alineacion vigente del club de la liga."""
         ...
