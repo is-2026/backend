@@ -217,3 +217,29 @@ async def test_change_coach_behavior_player(mocked_club_repo_class, mocked_behav
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "El comportamiento es de jugador"
     
+# creacion de club con POST /club y lo obtenemos con GET /club:
+# deberia devolver los datos del club de ese usuario
+async def test_get_my_club_returns_200(client, user):
+    await client.post(URL, json=VALID, headers=auth_header(user))
+
+    res = await client.get(URL, headers=auth_header(user))
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["club_name"] == CLUB_NAME
+    assert body["avatar_url"] == AVATAR_URL
+    assert body["user_id"] == str(user.id)
+
+
+# el usuario todavia no creo su club: tiene que responder 404
+async def test_get_my_club_without_club_returns_404(client, user):
+    res = await client.get(URL, headers=auth_header(user))
+    assert res.status_code == 404
+    assert res.json()["message"] == "El usuario no tiene un club creado"
+
+
+# pedimos GET /club sin token: tiene que responder 401
+async def test_get_my_club_without_token_returns_401(client):
+    res = await client.get(URL)
+    assert res.status_code == 401
+    assert "No autorizado" in res.json()["message"]

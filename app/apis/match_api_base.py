@@ -6,6 +6,7 @@ from uuid import UUID
 from app.models.change_live_behavior_request import ChangeLiveBehaviorRequest
 from app.models.error import Error
 from app.models.match import Match
+from app.models.penalty_order_input import PenaltyOrderInput
 from app.models.schedule_substitution_input import ScheduleSubstitutionInput
 from app.models.substitution import Substitution
 from app.security_api import get_token_bearerAuth
@@ -56,4 +57,15 @@ class BaseMatchApi:
         club_id: UUID,
     ) -> None:
         """Cancela la sustitución pendiente del club antes de que se ejecute."""
+        ...
+
+    async def set_penalty_order(
+        self,
+        match_id: UUID,
+        penalty_order_input: PenaltyOrderInput,
+        club_id: UUID,
+    ) -> None:
+        """Solo durante la ventana de penales:
+        elige los 5 pateadores y sus comportamientos.
+        """
         ...

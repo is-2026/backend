@@ -1,12 +1,15 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
 import pytest
 
 from app.engine.executor import BehaviorExecutor
+from app.engine.state import Side
 from app.ws.close_codes import NORMAL
 from app.ws.match import runner
 from app.ws.match.pauses import Pause
+from app.ws.match.penalty_order import build_penalty_order
 from app.ws.match.runner import (
     LiveMatch,
     Phase,
@@ -14,8 +17,9 @@ from app.ws.match.runner import (
     match_connections,
     run_match,
     start_match,
+    stop_match,
 )
-from app.ws.match.substitutions import PendingSubstitution, substitution_window
+from app.ws.match.substitutions import PendingSubstitution
 from tests.ws.conftest import FakeWebSocket
 
 TOTAL_TICKS = 5  # pausas después de los ticks 1, 2 y 3
@@ -25,6 +29,8 @@ NO_WAIT = {
     "start_delay": 0,
     "cooling_break_duration": 0,
     "halftime_duration": 0,
+    "penalty_window": 0,
+    "penalty_pause": 0,
 }
 
 
@@ -203,3 +209,194 @@ async def test_pending_substitutions_runs_at_the_end_of_the_pause(live, client):
     assert "h4" in ids and "h1" not in ids
     assert "a4" in ids and "a1" not in ids
     assert live.pending_substitutions == {}
+
+
+# --- penales ---
+def after_shootout_start(sent: list[dict]) -> list[dict]:
+    start = next(i for i, m in enumerate(sent) if m["type"] == "penaltyShootoutStart")
+    return sent[start + 1 :]
+
+
+async def test_tied_match_without_draws_goes_to_penalties(live, client):
+    live.allows_draws = False  # termina 0 a 0
+
+    await run_match(live, **NO_WAIT)
+
+    shootout = after_shootout_start(client.sent)
+    # sin comportamientos nadie convierte: se patean los 20 y sale del sorteo
+    assert [m["type"] for m in shootout if m["type"] != "matchState"] == [
+        "penaltyKick",
+        "penaltyResult",
+    ] * 20 + ["matchFinished"]
+    kick_states = [m for m in shootout if m["type"] == "matchState"]
+    assert all(len(m["data"]["players"]) == 2 for m in kick_states)
+    results = [m["data"] for m in shootout if m["type"] == "penaltyResult"]
+    assert [r["number"] for r in results] == list(range(1, 21))
+    assert not any(r["scored"] for r in results)
+    assert live.shootout.finished
+    finished = client.sent[-1]["data"]
+    assert (finished["home_penalties"], finished["away_penalties"]) == (0, 0)
+    # 0 a 0 en los 20 el ganador sale del sorteo
+    assert finished["winner_club_id"] in ("club-local", "club-visitante")
+
+
+async def test_penalties_alternate_with_default_order(live, client):
+    live.allows_draws = False
+
+    await run_match(live, **NO_WAIT)
+
+    kicks = [m["data"] for m in client.sent if m["type"] == "penaltyKick"]
+    # patea primero el local; defiende el del rival con el mismo lugar en su orden
+    assert [(k["team_id"], k["kicker_id"], k["defender_id"]) for k in kicks[:4]] == [
+        ("club-local", "h1", "a1"),
+        ("club-visitante", "a1", "h1"),
+        ("club-local", "h2", "a2"),
+        ("club-visitante", "a2", "h2"),
+    ]
+
+
+async def test_all_penalties_are_shown_on_the_right_goal(live, client):
+    live.allows_draws = False
+
+    await run_match(live, **NO_WAIT)
+
+    # en el motor el visitante patea hacia -x: sus matchState salen espejados
+    for m in after_shootout_start(client.sent):
+        if m["type"] == "penaltyKick":
+            kicker, defender = m["data"]["kicker_id"], m["data"]["defender_id"]
+        elif m["type"] == "matchState":
+            x = {p["player_id"]: p["position"]["x"] for p in m["data"]["players"]}
+            assert x[kicker] < 0 < x[defender]
+
+
+
+async def test_each_penalty_shows_the_setup_and_waits_before_the_shot(
+    live, client, monkeypatch
+):
+    live.allows_draws = False
+    sleeps = []
+    real_sleep = asyncio.sleep
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        await real_sleep(0)
+
+    monkeypatch.setattr(runner.asyncio, "sleep", fake_sleep)
+
+    await run_match(live, **{**NO_WAIT, "penalty_pause": 2.5})
+
+    shootout = after_shootout_start(client.sent)
+    kicks = [i for i, m in enumerate(shootout) if m["type"] == "penaltyKick"]
+    # después de cada penaltyKick llegan los dos ubicados, en el tick 0
+    assert all(
+        shootout[i + 1]["type"] == "matchState" and shootout[i + 1]["data"]["tick"] == 0
+        for i in kicks
+    )
+    assert sleeps.count(2.5) == len(kicks)
+
+
+async def test_the_goalie_does_not_use_its_behavior(live, client, match_state):
+    live.allows_draws = False
+    # con su comportamiento a1 se iría para adelante en vez de quedarse en el arco
+    live.executor.close()
+    live.executor = BehaviorExecutor(
+        match_state, {"a1": "def decide_action():\n    move(1, 0, 100)\n"}
+    )
+
+    await run_match(live, **NO_WAIT)
+
+    shootout = after_shootout_start(client.sent)
+    end = next(i for i, m in enumerate(shootout) if m["type"] == "penaltyResult")
+    first_kick = [m for m in shootout[:end] if m["type"] == "matchState"]
+    # en el primer penal ataja a1 y h1 no remata: espera 2 m adelante de su arco
+    assert {
+        (p["position"]["x"], p["position"]["y"])
+        for m in first_kick
+        for p in m["data"]["players"]
+        if p["player_id"] == "a1"
+    } == {(18.0, 0.0)}
+
+@pytest.mark.parametrize(
+    "allows_draws, home_score",
+    [(True, 0), (False, 1)],  # empate en liga con empates, o hay ganador
+)
+async def test_no_penalties(live, client, allows_draws, home_score):
+    live.allows_draws = allows_draws
+    live.state.home_score = home_score
+
+    await run_match(live, **NO_WAIT)
+
+    assert not any(m["type"].startswith("penalty") for m in client.sent)
+    assert live.shootout is None
+    assert client.sent[-1]["type"] == "matchFinished"
+
+
+def test_default_kickers_by_shirt_number_repeated_up_to_5(live):
+    live.info.home_lineup[0].number = 9  # h1 pasa a tener el número más alto
+
+    kickers = runner.default_kickers(live, Side.HOME)
+
+    assert [p.id for p in kickers] == ["h2", "h3", "h1", "h2", "h3"]
+
+
+def test_started_payload_during_penalty_window(live):
+    live.phase = Phase.PENALTIES
+
+    payload = runner.started_payload(live)
+
+    assert payload["data"]["status"] == "penalties"
+    assert payload["data"]["home_penalties"] == 0
+    assert payload["data"]["away_penalties"] == 0
+
+
+async def test_penalties_use_the_order_chosen_in_the_window(live, client):
+    live.allows_draws = False
+    live.penalty_orders["club-local"] = build_penalty_order(
+        live.info, "club-local", ["h4", "h5", "h6", "h1", "h2"]
+    )
+
+    await run_match(live, **NO_WAIT)
+
+    kicks = [m["data"] for m in client.sent if m["type"] == "penaltyKick"]
+    home = [k["kicker_id"] for k in kicks if k["team_id"] == "club-local"]
+    assert home[:5] == ["h4", "h5", "h6", "h1", "h2"]
+    # el visitante no eligió: patea con el orden por defecto contra los elegidos del local
+    away = [(k["kicker_id"], k["defender_id"]) for k in kicks if k["team_id"] == "club-visitante"]
+    assert away[:2] == [("a1", "h4"), ("a2", "h5")]
+
+
+PAUSE_TYPES = {"coolingBreakStart", "halftimeStart", "matchResumed"}
+
+
+async def test_start_match_passes_false(
+    match_state, match_info, match_id, client
+):
+    match_state.total_ticks = TOTAL_TICKS
+
+    live = start_match(match_id, match_state, {}, match_info, pauses=False, **NO_WAIT)
+    await live.task
+
+    types = [m["type"] for m in client.sent]
+    assert not PAUSE_TYPES & set(types) #chequeo que no haya pausas
+    assert types[-1] == "matchFinished" #y que el partido termine
+
+
+async def test_stop_match_running_match(match_state, match_info, match_id, client):
+    live = start_match(match_id, match_state, {}, match_info, start_delay=60)
+    await asyncio.sleep(0)  # la tarea llega a arrancar y queda en la espera
+
+    await stop_match(live)
+
+    assert live.task.cancelled()
+    assert match_id not in live_matches
+    assert client.closed_code == NORMAL
+    # se cortó, no terminó: no hay matchFinished
+    assert "matchFinished" not in [m["type"] for m in client.sent]
+
+async def test_run_match_pauses_false(live, client):
+    await run_match(live, pauses=False, **NO_WAIT)
+
+    types = [m["type"] for m in client.sent]
+    assert "coolingBreakStart" not in types
+    assert "halftimeStart" not in types
+    assert types[-1] == "matchFinished"

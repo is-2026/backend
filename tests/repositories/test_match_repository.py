@@ -111,7 +111,9 @@ async def test_get_by_id_returns_match(session):
     assert result is not None
     assert result.id == match_id
     assert result.home_club_id == home_club_id
+    assert result.home_club.club_name == "home"
     assert result.away_club_id == away_club_id
+    assert result.away_club.club_name == "away"
     assert result.status == MatchStatus.scheduled
     assert result.league_id is None
     assert result.home_score is None
@@ -180,6 +182,10 @@ async def test_list_by_league_orders_by_round_and_filters_by_status(session):
     repo = MatchRepository(session)
     all_matches = await repo.list_by_league(league_id)
     assert [m.id for m in all_matches] == [m_round_1.id, m_round_2.id]
+    assert all_matches[0].home_club.club_name == "C2"
+    assert all_matches[0].away_club.club_name == "C1"
+    assert all_matches[1].home_club.club_name == "C1"
+    assert all_matches[1].away_club.club_name == "C2"
 
     scheduled = await repo.list_by_league(league_id, status=MatchStatus.scheduled)
     assert [m.id for m in scheduled] == [m_round_2.id]

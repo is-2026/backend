@@ -101,3 +101,16 @@ class ClubApiImpl(BaseClubApi):
             created_at=club.created_at,
             coach_behavior_id=club.coach_behavior_id,
         )
+    
+    async def get_my_club(self, club_id: uuid.UUID) -> Club:
+        club = await ClubRepository(self._session).get_by_id(club_id)
+        if club is None:
+            raise HTTPException(status_code=404, detail="El club no existe")
+        return Club(
+            id=club.id,
+            club_name=club.club_name,
+            avatar_url=club.avatar_url,
+            user_id=club.user_id,
+            created_at=club.created_at,
+            coach_behavior_id=club.coach_behavior_id,
+        )

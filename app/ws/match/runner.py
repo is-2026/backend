@@ -2,14 +2,22 @@ import asyncio
 import logging
 import random
 import uuid
+import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
-from app.engine.constants import DT
+from app.engine.constants import DT, PENALTIES_PER_TEAM
 from app.engine.engine import kickoff, step
 from app.engine.executor import BehaviorExecutor
-from app.engine.state import MatchState
+from app.engine.penalties import (
+    Goalie,
+    Shootout,
+    kick_scored,
+    kick_stopped,
+    penalty_state,
+)
+from app.engine.state import MatchState, PlayerState, Side
 from app.ws.connection_manager import ConnectionManager
 from app.ws.match.info import MatchInfo
 from app.ws.match.messages import (
@@ -19,6 +27,9 @@ from app.ws.match.messages import (
     match_started_message,
     match_state_message,
     pause_start_message,
+    penalty_kick_message,
+    penalty_result_message,
+    penalty_shootout_start_message,
     substitution_made_message,
 )
 from app.ws.match.pauses import (
@@ -32,6 +43,8 @@ from app.ws.match.substitutions import PendingSubstitution, execute_substitution
 logger = logging.getLogger(__name__)
 
 START_DELAY_SECONDS = 3.0  # tiempo para que los clientes se conecten antes del tick 1
+PENALTY_WINDOW_SECONDS = 30.0  # ventana para elegir pateadores
+PENALTY_PAUSE_SECONDS = 2.0  # antes de cada remate, para ver quién patea
 
 
 class Phase(StrEnum):
@@ -55,7 +68,16 @@ class LiveMatch:
     # último matchState ya serializado, para el que se conecta
     last_state: dict | None = None
     # inicio de la pausa en curso ya serializado para el que se une justo en la pausa
+    # o la ventana de penales
+    # o el penal que se está pateando
+    # esto es para reutilizar TODO: hacerlo separado
     current_pause: dict | None = None
+    # False en una liga sin empates, si termina igualado se define por penales
+    allows_draws: bool = True
+    # la tanda, si es que hubo
+    shootout: Shootout | None = None
+    # team_id -> pateadores elegidos con el PUT durante la ventana
+    penalty_orders: dict[str, list[PlayerState]] = field(default_factory=dict)
     # team_id -> la sustitucion pedida por un club
     pending_substitutions: dict[str, PendingSubstitution] = field(default_factory=dict)
     # cuantas pausas empezaron
@@ -79,6 +101,10 @@ def start_match(
     start_delay: float = START_DELAY_SECONDS,
     cooling_break_duration: float = COOLING_BREAK_SECONDS,
     halftime_duration: float = HALFTIME_SECONDS,
+    penalty_window: float = PENALTY_WINDOW_SECONDS,
+    penalty_pause: float = PENALTY_PAUSE_SECONDS,
+    allows_draws: bool = True,
+    pauses: bool = True,
 ) -> LiveMatch:
     """Prepara el partido, lo anota en live_matches y lo larga como tarea de fondo.
     codes = player_id -> código del comportamiento.
@@ -93,13 +119,21 @@ def start_match(
         executor=BehaviorExecutor(state, codes),
         info=info,
         match_start=datetime.now(timezone.utc) + timedelta(seconds=start_delay),
+        allows_draws=allows_draws,
     )
     # el que se conecta durante la espera ya ve a los jugadores en formación (tick 0)
     live.last_state = _state_payload(live)
     live_matches[match_id] = live
     live.task = asyncio.create_task(
         run_match(
-            live, tick_interval, start_delay, cooling_break_duration, halftime_duration
+            live,
+            tick_interval,
+            start_delay,
+            cooling_break_duration,
+            halftime_duration,
+            penalty_window,
+            penalty_pause,
+            pauses=pauses,
         )
     )
     return live
@@ -162,9 +196,107 @@ async def _tick(live: LiveMatch, rng: random.Random) -> None:
     await match_connections.broadcast(live.match_id, live.last_state)
 
 
+def default_kickers(live: LiveMatch, side: Side) -> list[PlayerState]:
+    """Los 3 que están en cancha por número de camiseta, repetidos hasta completar 5."""
+    lineup = live.info.home_lineup if side == Side.HOME else live.info.away_lineup
+    numbers = {p.player_id: p.number for p in lineup}
+    on_field = sorted(
+        (p for p in live.state.players if p.side == side), key=lambda p: numbers[p.id]
+    )
+    return [on_field[i % len(on_field)] for i in range(PENALTIES_PER_TEAM)]
+
+
+def _kickers(live: LiveMatch, side: Side) -> list[PlayerState]:
+    """Los que eligió el club en la ventana, o los de por defecto si no eligió."""
+    team_id = live.info.home_club.id if side == Side.HOME else live.info.away_club.id
+    return live.penalty_orders.get(team_id) or default_kickers(live, side)
+
+
+async def _penalty_kick(
+    live: LiveMatch,
+    number: int,
+    rng: random.Random,
+    tick_interval: float,
+    penalty_pause: float,
+) -> None:
+    """Juega un penal: penaltyKick, los matchState y por último el penaltyResult"""
+    match_id = str(live.match_id)
+    shootout = live.shootout
+    side, kicker, defender = shootout.next_kick()
+    team_id = live.state.home_team_id if side == Side.HOME else live.state.away_team_id
+    kick = penalty_state(
+        live.state.home_team_id,
+        live.state.away_team_id,
+        kicker,
+        defender,
+        shootout.home_penalties,
+        shootout.away_penalties,
+    )
+    live.current_pause = penalty_kick_message(
+        match_id, number, team_id, kicker.id, defender.id, kick.total_ticks
+    ).model_dump(mode="json")
+    await match_connections.broadcast(live.match_id, live.current_pause)
+
+    # antes del remate: los dos ya ubicados (tick 0) y un rato para ver quién patea
+    live.last_state = match_state_message(
+        match_id, kick, mirrored=side == Side.AWAY
+    ).model_dump(mode="json")
+    await match_connections.broadcast(live.match_id, live.last_state)
+    await asyncio.sleep(penalty_pause)
+
+    goalie = Goalie(defender, rng)
+    # copio lo mismo que hace el runner normal
+    loop = asyncio.get_running_loop()
+    next_tick = loop.time()
+    while True:
+        actions = await live.executor.decide(kick)
+        actions[defender.id] = goalie.action(kick)  # el que ataja no usa su comportamiento
+        scored = kick_scored(step(kick, actions, rng))
+        # en el motor el visitante patea al arco izquierdo: lo espejamos para que el front
+        # vea todos los penales en el arco derecho
+        live.last_state = match_state_message(
+            match_id, kick, mirrored=side == Side.AWAY
+        ).model_dump(mode="json")
+        await match_connections.broadcast(live.match_id, live.last_state)
+        if scored or kick_stopped(kick, defender):
+            break
+        next_tick += tick_interval
+        await asyncio.sleep(max(0.0, next_tick - loop.time()))
+
+    shootout.record(scored)
+    result = penalty_result_message(
+        match_id, number, team_id, scored, shootout
+    ).model_dump(mode="json")
+    await match_connections.broadcast(live.match_id, result)
+
+
+async def _penalties(
+    live: LiveMatch,
+    rng: random.Random,
+    tick_interval: float,
+    penalty_window: float,
+    penalty_pause: float,
+) -> None:
+    """Abre la ventana para elegir los jugadores y después juega la tanda"""
+    live.phase = Phase.PENALTIES
+    live.current_pause = penalty_shootout_start_message(
+        str(live.match_id), penalty_window
+    ).model_dump(mode="json")
+    await match_connections.broadcast(live.match_id, live.current_pause)
+
+    await asyncio.sleep(penalty_window)
+
+    live.shootout = Shootout(_kickers(live, Side.HOME), _kickers(live, Side.AWAY), rng)
+    number = 0
+    while not live.shootout.finished:
+        number += 1
+        await _penalty_kick(live, number, rng, tick_interval, penalty_pause)
+    live.current_pause = None
+
+
 async def _notify_finish(live: LiveMatch) -> None:
     """Avisa que el partido terminó bien"""
-    finished = match_finished_message(str(live.match_id), live.state)
+    finished = match_finished_message(str(live.match_id), live.state, live.shootout)
     await match_connections.broadcast(live.match_id, finished.model_dump(mode="json"))
 
 
@@ -176,6 +308,13 @@ async def _clear(live: LiveMatch) -> None:
     await match_connections.close_all(live.match_id)
     live.executor.close()
 
+async def stop_match(live: LiveMatch) -> None:
+    """Corta un partido en curso y lo limpia, aunque la tarea no haya llegado a arrancar."""
+    if live.task is not None:
+        live.task.cancel()
+        with contextlib.suppress(asyncio.CancelledError): # esperamos a que termine de cortarse (el CancelledError es lo esperado)
+            await live.task
+    await _clear(live) # si el finally de run_match nunca se corrio limpiamos aca
 
 async def run_match(
     live: LiveMatch,
@@ -183,13 +322,16 @@ async def run_match(
     start_delay: float = START_DELAY_SECONDS,
     cooling_break_duration: float = COOLING_BREAK_SECONDS,
     halftime_duration: float = HALFTIME_SECONDS,
+    penalty_window: float = PENALTY_WINDOW_SECONDS,
+    penalty_pause: float = PENALTY_PAUSE_SECONDS,
+    pauses: bool = True,
 ) -> None:
     """Espera start_delay, juega hasta total_ticks con las pausas en el medio
     y avisa el final. Pase lo que pase, al final cierra el partido con _clear."""
     loop = asyncio.get_running_loop()
     rng = random.Random()
     try:
-        pause_schedule = pauses_schedule(live.state.total_ticks)
+        pause_schedule = pauses_schedule(live.state.total_ticks) if pauses else {}
         await asyncio.sleep(start_delay)
         live.phase = Phase.PLAYING
         next_tick = loop.time()
@@ -212,6 +354,9 @@ async def run_match(
             next_tick += tick_interval
             await asyncio.sleep(max(0.0, next_tick - loop.time()))
 
+        if not live.allows_draws and live.state.home_score == live.state.away_score:
+            await _penalties(live, rng, tick_interval, penalty_window, penalty_pause)
+
         await _notify_finish(live)
     except Exception:
         logger.exception("El partido %s se cortó por un error", live.match_id)
@@ -227,8 +372,27 @@ def _state_payload(live: LiveMatch) -> dict:
 def started_payload(live: LiveMatch) -> dict:
     """matchStarted para el que se acaba de conectar, con el tick y marcador de ahora.
     exclude_none: los suplentes no llevan behavior_id/behavior_name (en vez de null)."""
-    status = "paused" if live.phase == Phase.PAUSED else "in_progress"
+    if live.phase == Phase.PAUSED:
+        status = "paused"
+    elif live.phase == Phase.PENALTIES:
+        status = "penalties"
+    else:
+        status = "in_progress"
+
+    home_penalties = None
+    away_penalties = None
+    if live.phase == Phase.PENALTIES:
+        # durante la ventana todavía no hay tanda: van en 0
+        home_penalties = live.shootout.home_penalties if live.shootout else 0
+        away_penalties = live.shootout.away_penalties if live.shootout else 0
+
     message = match_started_message(
-        str(live.match_id), live.info, live.match_start, live.state, status
+        str(live.match_id),
+        live.info,
+        live.match_start,
+        live.state,
+        status,
+        home_penalties,
+        away_penalties,
     )
     return message.model_dump(mode="json", exclude_none=True)
