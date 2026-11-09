@@ -41,6 +41,9 @@ class LeagueEnrollmentDB(Base):  # tabla para los clubes que se inscriben
         ForeignKey("leagues.id"), nullable=False
     )
     club_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clubs.id"), nullable=False)
+    formation: Mapped[str] = mapped_column(
+        String(20), nullable = False, default="TRIANGLE", server_default="TRIANGLE"
+    )   # formación con la que juega el club en la liga
 
 
 class LeagueEnrollmentPlayerDB(Base):  # tabla para los jugadores del club
