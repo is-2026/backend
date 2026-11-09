@@ -8,7 +8,7 @@ from app.ws.match.runner import LiveMatch, start_match, stop_match
 
 
 def _search_code() -> str:
-    return next(b.code for b in DEFAULT_BEHAVIORS if b.name == "Marcador")
+    return next(b.code for b in DEFAULT_BEHAVIORS if b.name == "Defensor")
 
 
 def _test_player(side: Side) -> PlayerState:
@@ -58,9 +58,9 @@ def build_test_info(state: MatchState) -> MatchInfo:
     away = state.players[1]
     return MatchInfo(
         home_club=ClubSummary(id=state.home_team_id, name="Prueba", avatar_url=""),
-        away_club=ClubSummary(id=state.away_team_id, name="Marcador", avatar_url=""),
+        away_club=ClubSummary(id=state.away_team_id, name="Defensor", avatar_url=""),
         home_lineup=[_lineup_player(home, "Prueba")],
-        away_lineup=[_lineup_player(away, "Marcador")],
+        away_lineup=[_lineup_player(away, "Defensor")],
     )
 
 
