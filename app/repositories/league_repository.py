@@ -47,7 +47,14 @@ class ClubRankingTotals:
     goals_against: int
 
 
-def _apply_score(row: LeagueStandingsDB, goals_for: int, goals_against: int) -> None:
+def _apply_score(
+    row: LeagueStandingsDB,
+    goals_for: int,
+    goals_against: int,
+    won_shootout: bool | None = None,
+) -> None:
+    """won_shootout: None si no hubo penales. Si hubo, si este club ganó la tanda.
+    Los goles de la tanda no cuentan en goles a favor ni en contra."""
     row.matches_played += 1
     row.goals_for += goals_for
     row.goals_against += goals_against
@@ -55,11 +62,16 @@ def _apply_score(row: LeagueStandingsDB, goals_for: int, goals_against: int) -> 
     if goals_for > goals_against:
         row.won += 1
         row.points += 3
-    elif goals_for == goals_against:
+    elif goals_for < goals_against:
+        row.lost += 1
+    elif won_shootout is None:
         row.drawn += 1
         row.points += 1
+    elif won_shootout:
+        row.won_penalties += 1
+        row.points += 2
     else:
-        row.lost += 1
+        row.lost += 1  # perder por penales da 0 puntos, como cualquier derrota
 
 
 class LeagueRepository:
@@ -368,7 +380,9 @@ class LeagueRepository:
         away_club_id: uuid.UUID,
         home_score: int,
         away_score: int,
+        penalty_winner_id: uuid.UUID | None = None,
     ) -> None:
+        """penalty_winner_id: el club que ganó la tanda, None si no hubo penales."""
         result = await self._session.execute(
             select(LeagueStandingsDB, ClubDB.club_name)
             .join(ClubDB, ClubDB.id == LeagueStandingsDB.club_id)
@@ -380,10 +394,13 @@ class LeagueRepository:
         rows = result.all()
 
         for row, _ in rows:
+            won_shootout = (
+                None if penalty_winner_id is None else row.club_id == penalty_winner_id
+            )
             if row.club_id == home_club_id:
-                _apply_score(row, home_score, away_score)
+                _apply_score(row, home_score, away_score, won_shootout)
             elif row.club_id == away_club_id:
-                _apply_score(row, away_score, home_score)
+                _apply_score(row, away_score, home_score, won_shootout)
 
         # paso intermedio con ranks negativos para no violar UniqueConstraint(league_id, rank)
         for idx, (row, _) in enumerate(rows, start=1):

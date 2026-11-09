@@ -43,11 +43,24 @@ class MatchRepository:
         )
         await self._session.commit()
 
-    async def finish(self, match_id: uuid.UUID, home_score: int, away_score: int) -> None:
+    async def finish(
+        self,
+        match_id: uuid.UUID,
+        home_score: int,
+        away_score: int,
+        home_penalties: int | None = None,
+        away_penalties: int | None = None,
+    ) -> None:
         await self._session.execute(
             update(MatchDB)
             .where(MatchDB.id == match_id)
-            .values(status=MatchStatus.finished, home_score=home_score, away_score=away_score)
+            .values(
+                status=MatchStatus.finished,
+                home_score=home_score,
+                away_score=away_score,
+                home_penalties=home_penalties,
+                away_penalties=away_penalties,
+            )
         )
         await self._session.commit()
 

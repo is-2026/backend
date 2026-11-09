@@ -16,7 +16,7 @@ from app.engine.constants import (
     GOAL_HALF_WIDTH,
     KICK_SPEED_RANGE,
     SEPARATION_PASSES,
-    SHOT_SPREAD_DEG,
+    SHOT_SPREAD_RANGE,
     SOCIAL_DISTANCING,
     SPEED_MAX_RANGE,
     TICKS_PER_MINUTE,
@@ -216,9 +216,10 @@ def _rotate(x: float, y: float, angle: float) -> tuple[float, float]:
     return x * cos(angle) - y * sin(angle), x * sin(angle) + y * cos(angle)
 
 
-def _shot_error(rng: random.Random) -> float:
-    """Ángulo aleatorio (en radianes) que se desvía un remate."""
-    return radians(rng.uniform(-SHOT_SPREAD_DEG, SHOT_SPREAD_DEG))
+def _shot_error(rng: random.Random, control: int) -> float:
+    """Ángulo aleatorio (en radianes) que se desvía un remate: más control, menos desvío."""
+    spread = _scale(control, SHOT_SPREAD_RANGE)
+    return radians(rng.uniform(-spread, spread))
 
 
 def _resolve_kicks(
@@ -242,7 +243,7 @@ def _resolve_kicks(
         pct = _clamp(action.power_pct, 0, 100) / 100
         vx = x_normalized * speed_power * pct
         vy = y_normalized * speed_power * pct
-        vx, vy = _rotate(vx, vy, _shot_error(rng))
+        vx, vy = _rotate(vx, vy, _shot_error(rng, winner.control))
 
     elif isinstance(action, ShootAtGoal):
         goal_x = FIELD_HALF_LENGTH if winner.side == Side.HOME else -FIELD_HALF_LENGTH
@@ -252,7 +253,7 @@ def _resolve_kicks(
         speed_power = _scale(winner.power, KICK_SPEED_RANGE)
         vx = x_normalized * speed_power
         vy = y_normalized * speed_power
-        vx, vy = _rotate(vx, vy, _shot_error(rng))
+        vx, vy = _rotate(vx, vy, _shot_error(rng, winner.control))
 
     elif isinstance(action, PassTo):
         teammate = next((p for p in state.players if p.id == action.target_id), None)

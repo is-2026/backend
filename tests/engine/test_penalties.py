@@ -2,13 +2,17 @@ import random
 
 import pytest
 
+from app.engine.actions import Move
 from app.engine.constants import (
-    FIELD_HALF_LENGTH,
+    GOAL_HALF_WIDTH,
+    GOALIE_CORRECTION_SPEED_PCT,
+    GOALIE_FORMATION,
     KICKER_FORMATION,
     MAX_PENALTIES,
     PENALTY_TICKS,
 )
-from app.engine.penalties import Shootout, kick_stopped, penalty_state
+from app.engine.engine import step
+from app.engine.penalties import Goalie, Shootout, kick_stopped, penalty_state
 from app.engine.state import Side
 from tests.engine.conftest import brain_with_snapshot, make_player
 
@@ -33,9 +37,9 @@ def _find(state, player_id):
     [
         # el local ataca hacia +x: patea desde atrás de la pelota y el arquero
         # visitante defiende el arco de la derecha
-        (Side.HOME, KICKER_FORMATION[0][0], FIELD_HALF_LENGTH),
+        (Side.HOME, KICKER_FORMATION[0][0], -GOALIE_FORMATION[0][0]),
         # el visitante es el espejo
-        (Side.AWAY, -KICKER_FORMATION[0][0], -FIELD_HALF_LENGTH),
+        (Side.AWAY, -KICKER_FORMATION[0][0], GOALIE_FORMATION[0][0]),
     ],
 )
 def test_penalty_state_positions(kicker_side, kicker_x, goalie_x):
@@ -241,3 +245,58 @@ def test_shootout_record_after_finished_changes_nothing():
     shootout.record(True)
     assert shootout.winner == Side.HOME
     assert (shootout.home_penalties, shootout.away_penalties) == (3, 0)
+
+
+# --- Goalie ---
+def _goalie(kicker_side):
+    state = _penalty(kicker_side)
+    keeper = _find(state, "goalie")
+    return state, keeper, Goalie(keeper, random.Random(0))
+
+
+def test_goalie_waits_for_the_shot():
+    state, _, goalie = _goalie(Side.HOME)
+
+    assert goalie.action(state) == Move(0.0, 0.0, 0)
+
+
+@pytest.mark.parametrize("kicker_side", [Side.HOME, Side.AWAY])
+def test_goalie_dives_to_a_post_after_the_shot(kicker_side):
+    state, keeper, goalie = _goalie(kicker_side)
+    post = random.Random(0).choice((-GOAL_HALF_WIDTH, GOAL_HALF_WIDTH))
+    state.ball.last_touch_id = "kicker"  # ya remató; la pelota sigue lejos
+
+    action = goalie.action(state)
+
+    assert (action.dx, action.dy, action.speed_pct) == pytest.approx((0.0, post, 100))
+
+
+
+def test_goalie_stays_still_once_it_reaches_the_post():
+    state, keeper, goalie = _goalie(Side.HOME)
+    keeper.y = random.Random(0).choice((-GOAL_HALF_WIDTH, GOAL_HALF_WIDTH))  # ya está en el palo
+    state.ball.last_touch_id = "kicker"
+
+    assert goalie.action(state) == Move(0.0, 0.0, 0)
+
+@pytest.mark.parametrize("kicker_side", [Side.HOME, Side.AWAY])
+def test_goalie_corrects_toward_the_ball_when_it_gets_close(kicker_side):
+    state, keeper, goalie = _goalie(kicker_side)
+    state.ball.last_touch_id = "kicker"
+    # a 2 m adelante del arquero y corrida 1.5 m: cerca, pero fuera de su radio
+    toward_kicker = -1 if keeper.x > 0 else 1
+    state.ball.x, state.ball.y = keeper.x + 2.0 * toward_kicker, -1.5
+
+    action = goalie.action(state)
+
+    assert (action.dy, action.speed_pct) == pytest.approx((-1.5, GOALIE_CORRECTION_SPEED_PCT))
+
+
+@pytest.mark.parametrize("kicker_side", [Side.HOME, Side.AWAY])
+def test_goalie_clears_the_ball_when_it_reaches_it(kicker_side):
+    state, keeper, goalie = _goalie(kicker_side)
+    state.ball.x, state.ball.y = keeper.x, keeper.y  # la pelota le llega
+
+    step(state, {"goalie": goalie.action(state)}, random.Random(0))
+
+    assert kick_stopped(state, keeper)

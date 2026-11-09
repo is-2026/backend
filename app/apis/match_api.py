@@ -30,6 +30,7 @@ from app.models.change_live_behavior_request import ChangeLiveBehaviorRequest
 from app.models.error import Error
 from app.models.extra_models import TokenModel  # noqa: F401
 from app.models.match import Match
+from app.models.penalty_order_input import PenaltyOrderInput
 from app.models.schedule_substitution_input import ScheduleSubstitutionInput
 from app.models.submit_lineup_input import SubmitLineupInput
 from app.models.substitution import Substitution
@@ -217,4 +218,42 @@ async def unschedule_substitution(
         raise HTTPException(status_code=500, detail="Not implemented")
     return await BaseMatchApi.subclasses[0](session).unschedule_substitution(
         match_id, club.id
+    )
+
+
+@router.put(
+    "/matches/{match_id}/penalty-order",
+    responses={
+        200: {"description": "Orden de pateadores registrado"},
+        400: {
+            "model": Error,
+            "description": "No son 5 pateadores, hay repetidos, algún jugador no es de los 6 convocados del club, o un comportamiento no es propio o es de tipo DT",
+        },
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
+        403: {
+            "model": Error,
+            "description": "El club del usuario no juega ese partido",
+        },
+        404: {"model": Error, "description": "El partido no está en juego"},
+        409: {"model": Error, "description": "No hay una ventana de penales abierta"},
+    },
+    tags=["Match"],
+    summary="Elegir los pateadores de la tanda de penales",
+    response_model_by_alias=True,
+)
+async def set_penalty_order(
+    match_id: UUID = Path(..., description=""),
+    penalty_order_input: PenaltyOrderInput = Body(..., description=""),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Solo durante la ventana de 30 s que se abre cuando un partido de una liga sin
+    empates termina igualado. Si el club no elige, patean los 3 en cancha por número."""
+    if not BaseMatchApi.subclasses:
+        raise HTTPException(status_code=500, detail="Not implemented")
+    return await BaseMatchApi.subclasses[0](session).set_penalty_order(
+        match_id, penalty_order_input, club.id
     )

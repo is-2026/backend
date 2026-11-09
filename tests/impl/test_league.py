@@ -1306,6 +1306,8 @@ async def test_list_league_matches_success(api, mocks, league_status):
             status=MatchStatus.finished,
             home_score=2,
             away_score=1,
+            home_penalties=None,
+            away_penalties=None,
         )
     ]
 
