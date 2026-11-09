@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
@@ -14,6 +15,7 @@ from app.ws.match.runner import (
     match_connections,
     run_match,
     start_match,
+    stop_match,
 )
 from app.ws.match.substitutions import PendingSubstitution, substitution_window
 from tests.ws.conftest import FakeWebSocket
@@ -203,3 +205,39 @@ async def test_pending_substitutions_runs_at_the_end_of_the_pause(live, client):
     assert "h4" in ids and "h1" not in ids
     assert "a4" in ids and "a1" not in ids
     assert live.pending_substitutions == {}
+
+PAUSE_TYPES = {"coolingBreakStart", "halftimeStart", "matchResumed"}
+
+
+async def test_start_match_passes_false(
+    match_state, match_info, match_id, client
+):
+    match_state.total_ticks = TOTAL_TICKS
+
+    live = start_match(match_id, match_state, {}, match_info, pauses=False, **NO_WAIT)
+    await live.task
+
+    types = [m["type"] for m in client.sent]
+    assert not PAUSE_TYPES & set(types) #chequeo que no haya pausas
+    assert types[-1] == "matchFinished" #y que el partido termine
+
+
+async def test_stop_match_running_match(match_state, match_info, match_id, client):
+    live = start_match(match_id, match_state, {}, match_info, start_delay=60)
+    await asyncio.sleep(0)  # la tarea llega a arrancar y queda en la espera
+
+    await stop_match(live)
+
+    assert live.task.cancelled()
+    assert match_id not in live_matches
+    assert client.closed_code == NORMAL
+    # se cortó, no terminó: no hay matchFinished
+    assert "matchFinished" not in [m["type"] for m in client.sent]
+
+async def test_run_match_pauses_false(live, client):
+    await run_match(live, pauses=False, **NO_WAIT)
+
+    types = [m["type"] for m in client.sent]
+    assert "coolingBreakStart" not in types
+    assert "halftimeStart" not in types
+    assert types[-1] == "matchFinished"
