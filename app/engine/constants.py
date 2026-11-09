@@ -23,6 +23,7 @@ SPEED_MAX_RANGE = (4.0, 8.0)  # m/s
 CONTROL_RADIUS_RANGE = (0.5, 1.5)  # m
 KICK_SPEED_RANGE = (10.0, 25.0)  # m/s, pelota al 100% de power
 COOLDOWN_TICKS_RANGE = (10, 3)  # ticks, más agility = menos cooldown
+SHOT_SPREAD_RANGE = (20.0, 5.0)  # grados para cada lado, más control = menos desvío
 
 # Pelota
 BALL_FRICTION = 0.95  # factor por tick
@@ -31,9 +32,6 @@ BALL_STOP_SPEED = 0.1  # m/s, por debajo se considera quieta
 
 # Posiciones iniciales del local (formación TRIANGLE) el visitante las espeja
 TRIANGLE_HOME = ((-4.0, 0.0), (-12.0, -5.0), (-12.0, 5.0))
-
-# Cada remate se desvía al azar hasta este ángulo para cada lado
-SHOT_SPREAD_DEG = 25.0
 
 # Distancia de separación mínima entre jugadores (no es colisión, es más un forcefield)
 SOCIAL_DISTANCING = 1.0
