@@ -5,7 +5,12 @@ import uuid
 from app.db.club import ClubDB
 from app.db.match import MatchDB, MatchStatus
 from app.db.session import SessionLocal
-from app.engine.constants import FRIENDLY_TOTAL_TICKS, TICKS_PER_MINUTE, TRIANGLE_HOME
+from app.engine.constants import (
+    DEFAULT_FORMATION,
+    FORMATIONS,
+    FRIENDLY_TOTAL_TICKS,
+    TICKS_PER_MINUTE,
+)
 from app.engine.state import MatchState, PlayerState, Side
 from app.repositories.club_repository import ClubRepository
 from app.repositories.friendly_repository import FriendlyRepository, SquadMember
@@ -40,6 +45,8 @@ def build_match_state(
     match: MatchDB,
     squad: list[SquadMember],
     total_ticks: int = FRIENDLY_TOTAL_TICKS,    #por defecto: duracion de un friendly
+    home_formation: str = DEFAULT_FORMATION,
+    away_formation: str = DEFAULT_FORMATION,
 ) -> tuple[MatchState, dict[str, str]]:
     """Arma el estado inicial del motor y codes = player_id -> código.
     Solo entran los titulares; su orden en `squad` decide la posición en la formación."""
@@ -53,9 +60,9 @@ def build_match_state(
 
     state = MatchState(
         home_team_id=str(match.home_club_id),
-        home_formation=TRIANGLE_HOME,
+        home_formation=FORMATIONS[home_formation],
         away_team_id=str(match.away_club_id),
-        away_formation=TRIANGLE_HOME,  # el motor lo espeja
+        away_formation=FORMATIONS[away_formation],  # el motor lo espeja
         players=[_player_state(m, Side.HOME) for m in home]
         + [_player_state(m, Side.AWAY) for m in away],
         total_ticks=total_ticks,
