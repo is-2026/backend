@@ -109,3 +109,13 @@ class BaseLeaguesApi:
     ) -> SubmitLineupInput:
         """Devuelve la alineacion vigente del club de la liga."""
         ...
+
+
+    async def update_league_lineup(
+        self,
+        league_id: UUID,
+        submit_lineup_input: SubmitLineupInput,
+        club_id: UUID,
+    ) -> SubmitLineupInput:
+        """Guarda la alineacion del club en la liga. Rige desde el proximo partido."""
+        ...
