@@ -107,7 +107,7 @@ def start_match(
         executor=BehaviorExecutor(state, codes),
         info=info,
         match_start=datetime.now(timezone.utc) + timedelta(seconds=start_delay),
-        allows_draws=allows_draws
+        allows_draws=allows_draws,
     )
     # el que se conecta durante la espera ya ve a los jugadores en formación (tick 0)
     live.last_state = _state_payload(live)
@@ -257,7 +257,7 @@ async def _penalties(
 
 async def _notify_finish(live: LiveMatch) -> None:
     """Avisa que el partido terminó bien"""
-    finished = match_finished_message(str(live.match_id), live.state)
+    finished = match_finished_message(str(live.match_id), live.state, live.shootout)
     await match_connections.broadcast(live.match_id, finished.model_dump(mode="json"))
 
 

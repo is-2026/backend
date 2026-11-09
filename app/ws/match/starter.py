@@ -39,7 +39,7 @@ def _player_state(member: SquadMember, side: Side) -> PlayerState:
 def build_match_state(
     match: MatchDB,
     squad: list[SquadMember],
-    total_ticks: int = FRIENDLY_TOTAL_TICKS,    #por defecto: duracion de un friendly
+    total_ticks: int = FRIENDLY_TOTAL_TICKS,  # por defecto: duracion de un friendly
 ) -> tuple[MatchState, dict[str, str]]:
     """Arma el estado inicial del motor y codes = player_id -> código.
     Solo entran los titulares; su orden en `squad` decide la posición en la formación."""
@@ -117,7 +117,7 @@ class MatchStarter:
             home_club = await clubs.get_by_id(match.home_club_id)
             away_club = await clubs.get_by_id(match.away_club_id)
 
-            #es partido de liga
+            # es partido de liga
             if match.league_id is not None:
                 leagues = LeagueRepository(session)
                 league = await leagues.get(match.league_id)
@@ -145,7 +145,7 @@ class MatchStarter:
         )
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
-        #para una liga, se pueden esperar todas las tasks (matchs) antes de iniciar otra fecha
+        # para una liga, se pueden esperar todas las tasks (matchs) antes de iniciar otra fecha
         return task
 
     async def _save_result(
@@ -161,10 +161,14 @@ class MatchStarter:
         try:
             async with self._session_factory() as session:
                 await MatchRepository(session).finish(
-                    live.match_id, live.state.home_score, live.state.away_score
+                    live.match_id,
+                    live.state.home_score,
+                    live.state.away_score,
+                    live.shootout.home_penalties if live.shootout else None,
+                    live.shootout.home_penalties if live.shootout else None,
                 )
 
-                #es partido de liga
+                # es partido de liga
                 if league_id is not None:
                     await LeagueRepository(session).update_standings(
                         league_id,

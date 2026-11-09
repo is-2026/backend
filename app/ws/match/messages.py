@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app.engine.constants import TICKS_PER_MINUTE
 from app.engine.events import GoalEvent
 from app.engine.penalties import Shootout
-from app.engine.state import MatchState
+from app.engine.state import MatchState, Side
 from app.ws.match.info import MatchInfo
 from app.ws.match.pauses import Pause
 from app.ws.match.substitutions import PendingSubstitution
@@ -75,6 +75,9 @@ class MatchFinishedData(BaseModel):
     tick: int
     home_score: int
     away_score: int
+    home_penalties: int | None = None
+    away_penalties: int | None = None
+    winner_club_id: str | None = None
     match_end: datetime
     status: Literal["finished"] = "finished"
 
@@ -244,8 +247,23 @@ def goal_message(match_id: str, event: GoalEvent, state: MatchState) -> GoalMess
     )
 
 
-def match_finished_message(match_id: str, state: MatchState) -> MatchFinishedMessage:
-    """Se llama cuando termina el runner de correr los total_ticks"""
+def _winner_club_id(state: MatchState, shootout: Shootout | None) -> str | None:
+    """El ganador por goles, o por penales si hubo tanda. None si terminó empatado."""
+    if state.home_score != state.away_score:
+        home_won = state.home_score > state.away_score
+    elif shootout is not None and shootout.winner is not None:
+        home_won = shootout.winner == Side.HOME
+    else:
+        return None
+    return state.home_team_id if home_won else state.away_team_id
+
+
+def match_finished_message(
+    match_id: str, state: MatchState, shootout: Shootout | None = None
+) -> MatchFinishedMessage:
+    """Se llama cuando termina el runner de correr los total_ticks
+    ( y la tanda de penales si es que hubo)
+    """
     return MatchFinishedMessage(
         data=MatchFinishedData(
             match_id=match_id,
@@ -253,6 +271,9 @@ def match_finished_message(match_id: str, state: MatchState) -> MatchFinishedMes
             home_score=state.home_score,
             away_score=state.away_score,
             match_end=datetime.now(timezone.utc),
+            home_penalties=shootout.home_penalties if shootout else None,
+            away_penalties=shootout.away_penalties if shootout else None,
+            winner_club_id=_winner_club_id(state, shootout),
         )
     )
 
