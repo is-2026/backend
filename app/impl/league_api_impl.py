@@ -101,6 +101,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
                     SquadPlayerData(pl.player_id, pl.is_starter, pl.behavior_id)
                     for pl in create_league_input.players
                 ],
+                allows_draws=create_league_input.allows_draws,
             )
         except IntegrityError as exc_info:
             raise HTTPException(
@@ -113,6 +114,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             is_private=league.hashed_password is not None,
             max_clubs=league.max_clubs,
             status=league.status,
+            allows_draws=league.allows_draws,
             registered_clubs=[{"club_id": club_id.id, "club_name": club_id.club_name}],
         )
 
@@ -135,11 +137,12 @@ class LeaguesApiImpl(BaseLeaguesApi):
                     is_private=league.hashed_password is not None,
                     max_clubs=league.max_clubs,
                     status=league.status,
+                    allows_draws=league.allows_draws,
                     registered_clubs=registered,
                 )
             )
         return result
-    
+
     async def list_my_leagues(self, club_id: uuid.UUID) -> list[LeagueSummary]:
         repo = LeagueRepository(self._session)
         leagues = await repo.list_leagues_of_club(club_id)
@@ -181,6 +184,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             is_private=league.hashed_password is not None,
             max_clubs=league.max_clubs,
             status=league.status,
+            allows_draws=league.allows_draws,
             registered_clubs=registered,
         )
 
@@ -355,6 +359,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             is_private=league.hashed_password is not None,
             max_clubs=league.max_clubs,
             status="started",  # ya sabemos que arranco
+            allows_draws=league.allows_draws,
             registered_clubs=registered,
         )
 

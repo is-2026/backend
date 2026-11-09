@@ -75,6 +75,7 @@ class LeagueRepository:
         match_duration_minutes: int,
         club_id: uuid.UUID,
         squadPlayer: list[SquadPlayerData],
+        allows_draws: bool = True,
     ) -> LeagueDB:
         league = LeagueDB(
             id=uuid.uuid4(),
@@ -82,6 +83,7 @@ class LeagueRepository:
             hashed_password=hashed_password,
             max_clubs=max_clubs,
             match_duration_minutes=match_duration_minutes,
+            allows_draws=allows_draws,
             status="not_started",
             creator_club_id=club_id,
         )

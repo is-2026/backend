@@ -75,6 +75,7 @@ def mocks(monkeypatch):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
     mock.hash_password = AsyncMock(return_value="hashed")
     mock.verify_password = AsyncMock(return_value=True)
@@ -231,6 +232,7 @@ async def test_get_league_public(api, mocks):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
 
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
@@ -255,6 +257,7 @@ async def test_get_league_private(api, mocks):
         hashed_password="password",
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
     mocks.league_repo.get.return_value = league
@@ -277,6 +280,7 @@ async def test_get_league_not_available(api, mocks, status):
         hashed_password="password",
         max_clubs=5,
         status=status,
+        allows_draws=True,
     )
 
     mocks.league_repo.get.return_value = league
@@ -297,6 +301,7 @@ async def test_list_leagues_public(api, mocks):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River")
     mocks.league_repo.list_not_started.return_value = [league]
@@ -320,6 +325,7 @@ async def test_list_leagues_private(api, mocks):
         hashed_password="hash",
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
     mocks.league_repo.list_not_started.return_value = [league]
     mocks.league_repo.list_clubs_of_league.return_value = []
@@ -476,6 +482,7 @@ async def test_endpoint_create_league_returns_201(client, session, club):
     assert data["is_private"] is False
     assert data["status"] == "not_started"
     assert data["max_clubs"] == 5
+    assert data["allows_draws"] is True  # sin el campo, admite empates
     assert data["registered_clubs"][0]["club_name"] == "Instituto"
     assert await count_leagues(session) == 1
     inscripciones = await session.scalar(
@@ -486,6 +493,16 @@ async def test_endpoint_create_league_returns_201(client, session, club):
     )
     assert inscripciones == 1  # el creador queda inscripto
     assert jugadores == 6
+
+
+async def test_endpoint_create_league_without_draws(client, session, club):
+    body = await make_body(session, club)
+    body["allows_draws"] = False
+
+    r = await client.post(URL, json=body, headers=auth_header(club))
+
+    assert r.status_code == 201
+    assert r.json()["allows_draws"] is False
 
 
 async def test_endpoint_create_league_with_password_is_private(client, session, club):
@@ -930,6 +947,7 @@ async def test_start_league_success(api, mocks):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
         creator_club_id=CLUB.id,  #el club que llama es el creador
     )
     mocks.league_repo.get.return_value = league
