@@ -3,7 +3,7 @@ import random
 import pytest
 
 from app.engine.constants import (
-    FIELD_HALF_LENGTH,
+    GOALIE_FORMATION,
     KICKER_FORMATION,
     MAX_PENALTIES,
     PENALTY_TICKS,
@@ -33,9 +33,9 @@ def _find(state, player_id):
     [
         # el local ataca hacia +x: patea desde atrás de la pelota y el arquero
         # visitante defiende el arco de la derecha
-        (Side.HOME, KICKER_FORMATION[0][0], FIELD_HALF_LENGTH),
+        (Side.HOME, KICKER_FORMATION[0][0], -GOALIE_FORMATION[0][0]),
         # el visitante es el espejo
-        (Side.AWAY, -KICKER_FORMATION[0][0], -FIELD_HALF_LENGTH),
+        (Side.AWAY, -KICKER_FORMATION[0][0], GOALIE_FORMATION[0][0]),
     ],
 )
 def test_penalty_state_positions(kicker_side, kicker_x, goalie_x):

@@ -50,11 +50,8 @@ PENALTIES_PER_TEAM = 5
 MAX_PENALTIES = 20
 
 KICKER_FORMATION = ((-0.5, 0.0), (-0.5, 0.0), (-0.5, 0.0))
-GOALIE_FORMATION = (
-    (-FIELD_HALF_LENGTH, 0.0),
-    (-FIELD_HALF_LENGTH, 0.0),
-    (-FIELD_HALF_LENGTH, 0.0),
-)
+# el arquero arranca 2 m adelante de su arco: en la línea no se ve bien
+GOALIE_FORMATION = ((-18.0, 0.0), (-18.0, 0.0), (-18.0, 0.0))
 
 # Para la sandbox
 # Cuánto tiempo le doy a cada decide_action().
