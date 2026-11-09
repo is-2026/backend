@@ -13,6 +13,7 @@ from app.engine.constants import TRIANGLE_HOME
 from app.engine.executor import BehaviorExecutor
 from app.engine.state import MatchState, Side
 from app.security.tokens import create_access_token
+from app.ws.match.coach import CoachSetup
 from app.ws.match.info import ClubSummary, MatchInfo
 from app.ws.match.runner import LiveMatch, live_matches, match_connections, Phase
 from tests.engine.conftest import make_player
@@ -515,3 +516,50 @@ async def test_get_match_unauthorized_returns_401(client):
     r = await client.get(f"/matches/{uuid.uuid4()}")
     assert r.status_code == 401
     assert "message" in r.json()
+
+
+# --- DT ---
+@pytest.fixture
+def with_coach(club, live):
+    live.coaches[str(club[0].id)] = CoachSetup(code="", behaviors={})
+
+
+async def test_patch_409_with_coach(client, club, live, with_coach, behavior_calls):
+    result = await client.patch(
+        behavior_url(live.match_id, ON_FIELD),
+        json={"behavior_id": str(club[1].id)},
+        headers=auth_header(club),
+    )
+
+    assert result.status_code == 409
+    assert result.json()["message"] == "El club tiene un DT a cargo del partido"
+    assert behavior_calls == []
+
+
+async def test_post_409_with_coach(client, club, live, with_coach):
+    result = await client.post(
+        url(live.match_id), json=body(club), headers=auth_header(club)
+    )
+
+    assert result.status_code == 409
+    assert live.pending_substitutions == {}
+
+
+async def test_delete_409_with_coach(client, club, live, with_coach):
+    result = await client.delete(url(live.match_id), headers=auth_header(club))
+
+    assert result.status_code == 409
+
+
+async def test_put_penalty_order_409_with_coach(
+    client, club, penalty_window, with_coach, penalty_behavior_calls
+):
+    result = await client.put(
+        penalty_url(penalty_window.match_id),
+        json=penalty_body(club),
+        headers=auth_header(club),
+    )
+
+    assert result.status_code == 409
+    assert penalty_window.penalty_orders == {}
+    assert penalty_behavior_calls == []
