@@ -131,16 +131,19 @@ class SubstitutionMadeMessage(BaseModel):
     type: Literal["substitutionMade"] = "substitutionMade"
     data: SubstitutionMadeData
 
+
 class BehaviorChangedData(BaseModel):
-    match_id : str
-    tick : int
-    player_id : str
-    behavior_id : str 
-    behavior_name : str 
+    match_id: str
+    tick: int
+    player_id: str
+    behavior_id: str
+    behavior_name: str
+
 
 class BehaviorChangedMessage(BaseModel):
-    type : Literal["behaviorChanged"]  ="behaviorChanged"
-    data : BehaviorChangedData
+    type: Literal["behaviorChanged"] = "behaviorChanged"
+    data: BehaviorChangedData
+
 
 def match_started_message(
     match_id: str,
@@ -264,15 +267,20 @@ def substitution_made_message(
         )
     )
 
+
 def behavior_changed_message(
-        match_id: str, state: MatchState, player_id : str, behavior_id: str, behavior_name : str
-)-> BehaviorChangedMessage:
+    match_id: str,
+    state: MatchState,
+    player_id: str,
+    behavior_id: str,
+    behavior_name: str,
+) -> BehaviorChangedMessage:
     return BehaviorChangedMessage(
-       data=BehaviorChangedData( 
-           match_id= match_id,
-            tick= state.tick,
-            player_id= player_id,
-            behavior_id = behavior_id,
-            behavior_name= behavior_name
-       )    
+        data=BehaviorChangedData(
+            match_id=match_id,
+            tick=state.tick,
+            player_id=player_id,
+            behavior_id=behavior_id,
+            behavior_name=behavior_name,
+        )
     )
