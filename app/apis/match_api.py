@@ -126,7 +126,7 @@ async def set_lineup(
         },
         409: {
             "model": Error,
-            "description": "El partido se encuentra en penales"
+            "description": "El partido se encuentra en penales, o el club tiene un DT a cargo del partido"
         }
     },
     tags=["Match"],
@@ -171,7 +171,7 @@ async def change_live_behavior(
         404: {"model": Error, "description": "El partido no está en juego"},
         409: {
             "model": Error,
-            "description": "Ya hay una sustitución pendiente o no quedan pausas",
+            "description": "Ya hay una sustitución pendiente, no quedan pausas o el club tiene un DT a cargo del partido",
         },
     },
     tags=["Match"],
@@ -202,6 +202,7 @@ async def schedule_substitution(
         401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
         403: {"model": Error, "description": "El club del usuario no juega ese partido"},
         404: {"model": Error, "description": "El partido no está en juego o no hay ninguna sustitución pendiente"},
+        409: {"model": Error, "description": "El club tiene un DT a cargo del partido"},
     },
     tags=["Match"],
     summary="Desprogramar sustitución",

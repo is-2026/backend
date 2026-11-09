@@ -30,6 +30,16 @@ from app.ws.match.substitutions import (
 from app.ws.match.live_behavior import validate_player_on_field, PlayerNotOnField, update_info_match
 from app.ws.match.messages import behavior_changed_message
 
+
+def _coach_in_match(live: LiveMatch, team_id: str) -> None:
+    """409 si el club tiene un DT a cargo de este partido: los cambios los hace el DT.
+    Mira live.coaches, que se fija al arrancar el partido."""
+    if team_id in live.coaches:
+        raise HTTPException(
+            status_code=409, detail="El club tiene un DT a cargo del partido"
+        )
+
+
 class MatchApiImpl(BaseMatchApi):
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -71,6 +81,8 @@ class MatchApiImpl(BaseMatchApi):
                 status_code=403, detail="El club no juega este partido"
             ) from e
 
+        _coach_in_match(live, team_id)
+
         if live.phase == Phase.PENALTIES:
             raise HTTPException(
                 status_code=409, detail="El partido se encuentra en penales"
@@ -109,6 +121,8 @@ class MatchApiImpl(BaseMatchApi):
             raise HTTPException(
                 status_code=403, detail="El club no juega este partido"
             ) from e
+
+        _coach_in_match(live, team_id)
 
         behavior = await BehaviorRepository(self._session).get_id_and_club(
             schedule_substitution_input.substitution_behavior_id, club_id
@@ -160,6 +174,8 @@ class MatchApiImpl(BaseMatchApi):
             raise HTTPException(
                 status_code=403, detail="El club no juega este partido"
             ) from e
+
+        _coach_in_match(live, team_id)
 
         try:
             cancel(live.pending_substitutions, team_id)
