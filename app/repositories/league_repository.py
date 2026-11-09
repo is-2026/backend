@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_, delete, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 
 from app.db.behavior import BehaviorDB
 from app.db.match import MatchDB, MatchStatus
@@ -31,6 +31,20 @@ class SquadPlayerData:
     player_id: uuid.UUID
     is_starter: bool
     behavior_id: uuid.UUID | None = None
+
+@dataclass
+class ClubRankingTotals:
+    club_id: uuid.UUID
+    club_name: str
+    avatar_url: str
+    points: int
+    matches_played: int
+    won: int
+    won_penalties: int
+    drawn: int
+    lost: int
+    goals_for: int
+    goals_against: int
 
 
 def _apply_score(row: LeagueStandingsDB, goals_for: int, goals_against: int) -> None:
@@ -260,6 +274,51 @@ class LeagueRepository:
             raise LeagueStartFailure from e
 
         await self._session.commit()
+
+
+    # suma por club las filas de la tabla de posiciones de las ligas publicas
+    # en curso o terminadas. solo clubes con al menos un partido jugado
+    async def list_ranking_totals(self) -> list[ClubRankingTotals]:
+        result = await self._session.execute(
+            select(
+                ClubDB.id,
+                ClubDB.club_name,
+                ClubDB.avatar_url,
+                func.sum(LeagueStandingsDB.points).label("points"),
+                func.sum(LeagueStandingsDB.matches_played).label("matches_played"),
+                func.sum(LeagueStandingsDB.won).label("won"),
+                func.sum(LeagueStandingsDB.won_penalties).label("won_penalties"),
+                func.sum(LeagueStandingsDB.drawn).label("drawn"),
+                func.sum(LeagueStandingsDB.lost).label("lost"),
+                func.sum(LeagueStandingsDB.goals_for).label("goals_for"),
+                func.sum(LeagueStandingsDB.goals_against).label("goals_against"),
+            )
+            .join(LeagueDB, LeagueDB.id == LeagueStandingsDB.league_id)
+            .join(ClubDB, ClubDB.id == LeagueStandingsDB.club_id)
+            .where(
+                LeagueDB.hashed_password.is_(None),  # pública
+                LeagueDB.status.in_(["started", "finished"]),
+            )
+            .group_by(ClubDB.id, ClubDB.club_name, ClubDB.avatar_url)
+            .having(func.sum(LeagueStandingsDB.matches_played) > 0)
+        )
+        # SUM devuelve Decimal en MySQL: casteo a int (RankingItem usa StrictInt)
+        return [
+            ClubRankingTotals(
+                club_id=row.id,
+                club_name=row.club_name,
+                avatar_url=row.avatar_url,
+                points=int(row.points),
+                matches_played=int(row.matches_played),
+                won=int(row.won),
+                won_penalties=int(row.won_penalties),
+                drawn=int(row.drawn),
+                lost=int(row.lost),
+                goals_for=int(row.goals_for),
+                goals_against=int(row.goals_against),
+            )
+            for row in result.all()
+        ]
 
     async def get_squad_by_match(self, match_id: uuid.UUID) -> list[SquadMember]:
         """Los convocados vigentes en la liga para los dos clubes de ese partido:
