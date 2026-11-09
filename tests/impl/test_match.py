@@ -163,15 +163,26 @@ def sent(monkeypatch):   #sirve para ver que mensakes manda el endpoint por webs
     return messages
 
 
-async def test_changes_live_behavior(client, club, live, sent):
+@pytest.fixture
+def behavior_calls(live, monkeypatch):
+    """Registra las llamadas a executor.set_behavior sin mandar nada al proceso hijo.
+    Que el executor aplique bien el cambio ya se testea en tests/engine/test_executor.py."""
+    calls = []
+
+    def fake_set_behavior(player_id, code):
+        calls.append((player_id, code))
+
+    monkeypatch.setattr(live.executor, "set_behavior", fake_set_behavior)
+    return calls
+
+
+async def test_changes_live_behavior(client, club, live, sent, behavior_calls):
     #club crea una tupla (club, behavior)
     #client para simular las consultas quue hace el front
     #live arma un partido en vivo y lo registra el live_matches
+    #behavior_calls guarda con que (player_id, code) se llamo a executor.set_behavior
 
     behavior = club[1]
-
-    assert ON_FIELD not in live.executor._brains #Chequeo que el comportamiento del jugador no este asignado, pues el executor se crea vacio 
-    #._brains es un diccionario (player_id, PlayerBrain) y cada PlayerBrain tiene el codigo del comportamiento.
 
     result = await client.patch(
         behavior_url(live.match_id, ON_FIELD), 
@@ -180,7 +191,7 @@ async def test_changes_live_behavior(client, club, live, sent):
     )  # LO que pide el router (de la URL se extrae el match_id y el player_id, del body el ChangeLiveBehaviorRequest y del header(token) el club)
 
     assert result.status_code == 200
-    assert ON_FIELD in live.executor._brains #chequeo que se cargo
+    assert behavior_calls == [(ON_FIELD, behavior.code)] #chequeo que se le pidio al executor cargar el comportamiento
 
     player = next(p for p in live.info.home_lineup if p.player_id == ON_FIELD)
     assert player.behavior_id == str(behavior.id) #veo que se actualizo la info
@@ -249,7 +260,7 @@ async def test_changes_live_behavior_behavior_not_exist(client, club, live, sent
     assert result.status_code == 400
     assert result.json()["message"] == "El comportamiento no existe"
 
-async def test_change_live_behavior_player_not_field(client, club, live, sent):
+async def test_change_live_behavior_player_not_field(client, club, live, sent, behavior_calls):
     behavior = club[1]
 
     result = await client.patch(
@@ -259,7 +270,7 @@ async def test_change_live_behavior_player_not_field(client, club, live, sent):
     )
 
     assert len(sent) == 0  # chequeo que no se mande nada
-    assert ON_BENCH not in live.executor._brains  # no se le aplicó el comportamiento
+    assert behavior_calls == []  # no se le aplicó el comportamiento
     assert result.status_code == 404
     assert (result.json()["message"] == "El jugador no se encuentra en cancha del lado del club"
 )
