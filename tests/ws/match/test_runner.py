@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
@@ -28,6 +29,7 @@ NO_WAIT = {
     "cooling_break_duration": 0,
     "halftime_duration": 0,
     "penalty_window": 0,
+    "penalty_pause": 0,
 }
 
 
@@ -265,6 +267,31 @@ async def test_all_penalties_are_shown_on_the_right_goal(live, client):
             x = {p["player_id"]: p["position"]["x"] for p in m["data"]["players"]}
             assert x[kicker] < 0 < x[defender]
 
+
+
+async def test_each_penalty_shows_the_setup_and_waits_before_the_shot(
+    live, client, monkeypatch
+):
+    live.allows_draws = False
+    sleeps = []
+    real_sleep = asyncio.sleep
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        await real_sleep(0)
+
+    monkeypatch.setattr(runner.asyncio, "sleep", fake_sleep)
+
+    await run_match(live, **{**NO_WAIT, "penalty_pause": 2.5})
+
+    shootout = after_shootout_start(client.sent)
+    kicks = [i for i, m in enumerate(shootout) if m["type"] == "penaltyKick"]
+    # después de cada penaltyKick llegan los dos ubicados, en el tick 0
+    assert all(
+        shootout[i + 1]["type"] == "matchState" and shootout[i + 1]["data"]["tick"] == 0
+        for i in kicks
+    )
+    assert sleeps.count(2.5) == len(kicks)
 
 @pytest.mark.parametrize(
     "allows_draws, home_score",

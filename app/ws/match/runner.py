@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 START_DELAY_SECONDS = 3.0  # tiempo para que los clientes se conecten antes del tick 1
 PENALTY_WINDOW_SECONDS = 30.0  # ventana para elegir pateadores
+PENALTY_PAUSE_SECONDS = 2.0  # antes de cada remate, para ver quién patea
 
 
 class Phase(StrEnum):
@@ -94,6 +95,7 @@ def start_match(
     cooling_break_duration: float = COOLING_BREAK_SECONDS,
     halftime_duration: float = HALFTIME_SECONDS,
     penalty_window: float = PENALTY_WINDOW_SECONDS,
+    penalty_pause: float = PENALTY_PAUSE_SECONDS,
     allows_draws: bool = True,
 ) -> LiveMatch:
     """Prepara el partido, lo anota en live_matches y lo larga como tarea de fondo.
@@ -122,6 +124,7 @@ def start_match(
             cooling_break_duration,
             halftime_duration,
             penalty_window,
+            penalty_pause,
         )
     )
     return live
@@ -201,7 +204,11 @@ def _kickers(live: LiveMatch, side: Side) -> list[PlayerState]:
 
 
 async def _penalty_kick(
-    live: LiveMatch, number: int, rng: random.Random, tick_interval: float
+    live: LiveMatch,
+    number: int,
+    rng: random.Random,
+    tick_interval: float,
+    penalty_pause: float,
 ) -> None:
     """Juega un penal: penaltyKick, los matchState y por último el penaltyResult"""
     match_id = str(live.match_id)
@@ -220,6 +227,13 @@ async def _penalty_kick(
         match_id, number, team_id, kicker.id, defender.id, kick.total_ticks
     ).model_dump(mode="json")
     await match_connections.broadcast(live.match_id, live.current_pause)
+
+    # antes del remate: los dos ya ubicados (tick 0) y un rato para ver quién patea
+    live.last_state = match_state_message(
+        match_id, kick, mirrored=side == Side.AWAY
+    ).model_dump(mode="json")
+    await match_connections.broadcast(live.match_id, live.last_state)
+    await asyncio.sleep(penalty_pause)
 
     # copio lo mismo que hace el runner normal
     loop = asyncio.get_running_loop()
@@ -246,7 +260,11 @@ async def _penalty_kick(
 
 
 async def _penalties(
-    live: LiveMatch, rng: random.Random, tick_interval: float, penalty_window: float
+    live: LiveMatch,
+    rng: random.Random,
+    tick_interval: float,
+    penalty_window: float,
+    penalty_pause: float,
 ) -> None:
     """Abre la ventana para elegir los jugadores y después juega la tanda"""
     live.phase = Phase.PENALTIES
@@ -261,7 +279,7 @@ async def _penalties(
     number = 0
     while not live.shootout.finished:
         number += 1
-        await _penalty_kick(live, number, rng, tick_interval)
+        await _penalty_kick(live, number, rng, tick_interval, penalty_pause)
     live.current_pause = None
 
 
@@ -287,6 +305,7 @@ async def run_match(
     cooling_break_duration: float = COOLING_BREAK_SECONDS,
     halftime_duration: float = HALFTIME_SECONDS,
     penalty_window: float = PENALTY_WINDOW_SECONDS,
+    penalty_pause: float = PENALTY_PAUSE_SECONDS,
 ) -> None:
     """Espera start_delay, juega hasta total_ticks con las pausas en el medio
     y avisa el final. Pase lo que pase, al final cierra el partido con _clear."""
@@ -317,7 +336,7 @@ async def run_match(
             await asyncio.sleep(max(0.0, next_tick - loop.time()))
 
         if not live.allows_draws and live.state.home_score == live.state.away_score:
-            await _penalties(live, rng, tick_interval, penalty_window)
+            await _penalties(live, rng, tick_interval, penalty_window, penalty_pause)
 
         await _notify_finish(live)
     except Exception:
