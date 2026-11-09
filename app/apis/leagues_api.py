@@ -61,13 +61,18 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
     response_model_by_alias=True,
 )
 async def list_leagues(
+    name: Optional[str] = Query(
+        None,
+        description="Devuelve solo las ligas cuyo nombre contiene este texto, sin distinguir mayúsculas.",
+        alias="name",
+    ),
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
     session: AsyncSession = Depends(get_session),
 ) -> List[LeagueDetail]:
     """Devuelve tanto ligas públicas como privadas. Solo no iniciadas"""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0](session).list_leagues()
+    return await BaseLeaguesApi.subclasses[0](session).list_leagues(name)
 
 
 @router.post(
