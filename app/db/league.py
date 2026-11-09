@@ -1,7 +1,16 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Integer, DateTime, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+    true,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -17,6 +26,9 @@ class LeagueDB(Base):
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     max_clubs: Mapped[int] = mapped_column(Integer, nullable=False)
     match_duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    allows_draws: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="not_started"
     )
@@ -30,9 +42,9 @@ class LeagueDB(Base):
 
 class LeagueEnrollmentDB(Base):  # tabla para los clubes que se inscriben
     __tablename__ = "league_enrollments"
-    __table_args__ = (UniqueConstraint(
-        "league_id", "club_id"
-    ),)  # el club se inscribe solo 1 vez por liga
+    __table_args__ = (
+        UniqueConstraint("league_id", "club_id"),
+    )  # el club se inscribe solo 1 vez por liga
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, default=uuid.uuid4, index=True
@@ -58,5 +70,5 @@ class LeagueEnrollmentPlayerDB(Base):  # tabla para los jugadores del club
     )
     is_starter: Mapped[bool] = mapped_column(nullable=False)
     behavior_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("behaviors.id", ondelete = "SET NULL"), nullable=True
+        ForeignKey("behaviors.id", ondelete="SET NULL"), nullable=True
     )  # solo titulares
