@@ -7,14 +7,22 @@ from multiprocessing.connection import Connection
 from multiprocessing.context import SpawnProcess
 
 from app.engine.actions import Action
-from app.engine.behavior_exec import PlayerBrain, Snapshot, load_brain
+from app.engine.behavior_exec import (
+    CoachBrain,
+    CoachSnapshot,
+    PlayerBrain,
+    Snapshot,
+    load_brain,
+    load_coach_brain,
+)
+from app.engine.coach_orders import CoachOrder
 from app.engine.constants import (
     CALL_TIMEOUT,
     CODE_LOAD_TIMEOUT,
     MAX_CONSECUTIVE_TIMEOUTS,
     MEMORY_LIMIT_MB,
 )
-from app.engine.state import PlayerState
+from app.engine.state import PlayerState, Side
 
 
 @contextmanager
@@ -44,16 +52,29 @@ def _load_brain_with_time_limit(
         return None
 
 
+def _load_coach_with_time_limit(
+    side: Side, code: str, timeout_seconds: float
+) -> CoachBrain | None:  ## carga el codigo del comportamiento de dt, si se cuelga devuelve None
+    try:
+        with _time_limit(timeout_seconds):
+            return load_coach_brain(side, code)
+    except BehaviorTimeout:
+        return None
+
+
 def _worker_main(
     conn,
     players: list[PlayerState],
     codes: dict[str, str],
+    coach_code: str | None = None,
 ):
     """
     Tipos de mensajes:
     ("close"),
     ("set", player, code),
-    ("decide", snapshot, player_ids)
+    ("decide", snapshot, player_ids, coach_snapshot) -> (acciones, órdenes del DT)
+    ("coach", coach_snapshot) -> órdenes del DT (para la llamada de penales)
+    coach_snapshot puede ser None: en ese caso no corre el DT.
     Todo esto se lo manda el padre.
     """
     os.environ.clear()
@@ -72,6 +93,13 @@ def _worker_main(
             timeouts[player.id] = 0
             brains[player.id] = brain
 
+    coach: CoachBrain | None = None
+    if coach_code is not None and players:
+        # si el código del DT se cuelga al cargar, el equipo juega sin DT
+        coach = _load_coach_with_time_limit(
+            players[0].side, coach_code, CODE_LOAD_TIMEOUT
+        )
+
     try:
         while True:
             data = conn.recv()
@@ -86,9 +114,15 @@ def _worker_main(
                     timeouts[player.id] = 0  # le reincio los timeouts
                 # si el código nuevo se cuelga al cargar, sigue con el brain viejo
             elif type_msg == "decide":
-                _, snapshot, player_ids = data
+                _, snapshot, player_ids, coach_snapshot = data
+                # primero los jugadores y después el DT
                 actions = _decide_all(brains, timeouts, snapshot, player_ids)
-                conn.send(actions)
+                orders, coach = _decide_coach(coach, coach_snapshot)
+                conn.send((actions, orders))
+            elif type_msg == "coach":
+                _, coach_snapshot = data
+                orders, coach = _decide_coach(coach, coach_snapshot)
+                conn.send(orders)
     finally:
         conn.close()
 
@@ -123,14 +157,36 @@ def _decide_all(
     return actions
 
 
+def _decide_coach(
+    coach: CoachBrain | None, snapshot: CoachSnapshot | None
+) -> tuple[list[CoachOrder], CoachBrain | None]:
+    """Corre el DT con límite de tiempo. Devuelve (órdenes, DT con el que sigue).
+    A diferencia de los jugadores, un timeout no lo saca del partido: pierde las
+    órdenes de ese tick y en el siguiente se lo vuelve a llamar (así dice el
+    contrato). Solo se lo saca si se queda sin memoria."""
+    if coach is None or snapshot is None: ## Si alguno es none, no hace nada
+        return [], coach
+    try:
+        with _time_limit(CALL_TIMEOUT):
+            orders = coach.run(snapshot)
+    except BehaviorTimeout: 
+        return [], coach
+    except MemoryError:
+        return [], None
+    return orders, coach
+
+
 def start_worker(
-    players: list[PlayerState], codes: dict[str, str]
+    players: list[PlayerState], codes: dict[str, str], coach_code: str | None = None
 ) -> tuple[SpawnProcess, Connection]:
-    """Devuelve (proceso, conn_padre)"""
+    """Devuelve (proceso, conn_padre). coach_code es el código del DT del equipo,
+    o None si juega sin DT."""
     ctx = multiprocessing.get_context("spawn")
     parent_conn, child_conn = ctx.Pipe()
-    proc = ctx.Process(
-        target=_worker_main, args=(child_conn, players, codes), daemon=True
+    proc = ctx.Process( #crea el proceso hijo donde se van a correr  los comportamientos.
+        target=_worker_main,
+        args=(child_conn, players, codes, coach_code),
+        daemon=True,
     )
     proc.start()
     # el padre nunca va a usar este fd, el hijo tiene una copia propia, lo cierro
