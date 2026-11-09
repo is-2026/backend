@@ -13,6 +13,8 @@ from app.security.tokens import create_access_token
 from app.models.change_coach_input import ChangeCoachInput
 from app.impl.club_api_impl import ClubApiImpl
 from app.impl.behavior_api_impl import BehaviorApiImpl
+from app.db.league import LeagueDB
+from app.db.standings import LeagueStandingsDB
 
 CLUB_NAME = "Instituto"
 AVATAR_URL = "https://img.com/avatar.png"
@@ -243,3 +245,70 @@ async def test_get_my_club_without_token_returns_401(client):
     res = await client.get(URL)
     assert res.status_code == 401
     assert "No autorizado" in res.json()["message"]
+
+# pedimos el perfil de un club sin token: debe responder 401
+async def test_get_club_profile_without_token_returns_401(client):
+    res = await client.get(f"/clubs/{uuid.uuid4()}")
+    assert res.status_code == 401
+    assert "No autorizado" in res.json()["message"]
+
+
+# pedimos el perfil de un club que no existe: debe responder 404
+async def test_get_club_profile_not_found_returns_404(client, user):
+    res = await client.get(f"/clubs/{uuid.uuid4()}", headers=auth_header(user))
+    assert res.status_code == 404
+    assert res.json()["message"] == "El club no existe"
+
+
+# prueba de club que no jugo en ninguna liga publica:
+# debe tener todos los campos en 0 y sin posicion en el ranking
+async def test_get_club_profile_without_matches(client, session, user):
+    club_id = uuid.uuid4()
+    session.add(ClubDB(id=club_id, club_name=CLUB_NAME, avatar_url=AVATAR_URL, user_id=user.id))
+    await session.commit()
+
+    res = await client.get(f"/clubs/{club_id}", headers=auth_header(user))
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["id"] == str(club_id)
+    assert body["club_name"] == CLUB_NAME
+    assert body["ranking_position"] is None
+    assert body["points"] == 0
+    assert body["matches_played"] == 0
+
+
+# creamos dos clubes en una liga publica y el nuestro queda segundo:
+# el perfil tiene que traer la misma posicion y los mismos numeros que /ranking
+async def test_get_club_profile_matches_ranking(client, session, user):
+    other_user_id, club_id, other_id, league_id = (uuid.uuid4() for _ in range(4))
+    session.add(UserDB(id=other_user_id, email="otro@prueba.com", hashed_password="hash"))
+    await session.flush()
+    session.add_all([
+        ClubDB(id=club_id, club_name=CLUB_NAME, avatar_url=AVATAR_URL, user_id=user.id),
+        ClubDB(id=other_id, club_name="Talleres", avatar_url=AVATAR_URL, user_id=other_user_id),
+    ])
+    await session.flush()
+    session.add(LeagueDB(id=league_id, name="Liga", hashed_password=None, max_clubs=5,
+                         match_duration_minutes=10, status="started", creator_club_id=club_id))
+    await session.flush()
+    session.add_all([
+        LeagueStandingsDB(league_id=league_id, club_id=other_id, rank=1, points=6,
+                          matches_played=2, won=2, won_penalties=0, drawn=0, lost=0,
+                          goals_for=4, goals_against=1),
+        LeagueStandingsDB(league_id=league_id, club_id=club_id, rank=2, points=3,
+                          matches_played=2, won=1, won_penalties=0, drawn=0, lost=1,
+                          goals_for=2, goals_against=2),
+    ])
+    await session.commit()
+
+    ranking = (await client.get("/ranking", headers=auth_header(user))).json()
+    res = await client.get(f"/clubs/{club_id}", headers=auth_header(user))
+
+    assert res.status_code == 200
+    body = res.json()
+    row = ranking[1]
+    assert body["ranking_position"] == row["position"] == 2
+    for field in ["points", "matches_played", "won", "won_penalties",
+                  "drawn", "lost", "goals_for", "goals_against"]:
+        assert body[field] == row[field]

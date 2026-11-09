@@ -215,6 +215,7 @@ async def get_club(
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
+    session: AsyncSession = Depends(get_session),
 ) -> ClubProfile:
     if not BaseClubApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
