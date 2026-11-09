@@ -294,6 +294,28 @@ async def test_each_penalty_shows_the_setup_and_waits_before_the_shot(
     )
     assert sleeps.count(2.5) == len(kicks)
 
+
+async def test_the_goalie_does_not_use_its_behavior(live, client, match_state):
+    live.allows_draws = False
+    # con su comportamiento a1 se iría para adelante en vez de quedarse en el arco
+    live.executor.close()
+    live.executor = BehaviorExecutor(
+        match_state, {"a1": "def decide_action():\n    move(1, 0, 100)\n"}
+    )
+
+    await run_match(live, **NO_WAIT)
+
+    shootout = after_shootout_start(client.sent)
+    end = next(i for i, m in enumerate(shootout) if m["type"] == "penaltyResult")
+    first_kick = [m for m in shootout[:end] if m["type"] == "matchState"]
+    # en el primer penal ataja a1 y h1 no remata: espera 2 m adelante de su arco
+    assert {
+        (p["position"]["x"], p["position"]["y"])
+        for m in first_kick
+        for p in m["data"]["players"]
+        if p["player_id"] == "a1"
+    } == {(18.0, 0.0)}
+
 @pytest.mark.parametrize(
     "allows_draws, home_score",
     [(True, 0), (False, 1)],  # empate en liga con empates, o hay ganador
