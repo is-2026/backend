@@ -139,11 +139,13 @@ def spawn_worker():
 
 
 def ask(conn, state, timeout=5.0):
-    """Pide un decide al hijo. timeout largo: el primero incluye el arranque."""
+    """Pide un decide al hijo (sin DT) y devuelve solo las acciones.
+    timeout largo: el primero incluye el arranque."""
     snapshot = take_snapshot(state, Side.HOME)
-    conn.send(("decide", snapshot, [player.id for player in home(state)]))
+    conn.send(("decide", snapshot, [player.id for player in home(state)], None))
     assert conn.poll(timeout), "el hijo no contestó"
-    return conn.recv()
+    actions, _ = conn.recv()
+    return actions
 
 
 # --- _decide_all directo ---
