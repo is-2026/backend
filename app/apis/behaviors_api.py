@@ -28,6 +28,7 @@ from app.models.behavior import Behavior
 from app.models.create_behavior_input import CreateBehaviorInput, UpdateBehaviorInput
 from app.models.error import Error
 from app.models.extra_models import TokenModel  # noqa: F401
+from app.models.behavior_test_input import BehaviorTestStarted, BehaviorTestInput
 from app.security_api import get_token_bearerAuth
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
@@ -82,6 +83,26 @@ async def create_behavior(
         raise HTTPException(status_code=500, detail="Not implemented")
     return await BaseBehaviorsApi.subclasses[0](session).create_behavior(create_behavior_input, club.id)
 
+@router.post(
+    "/club/behaviors/test",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {"model": BehaviorTestStarted, "description": "Prueba iniciada: conectarse a /ws/matches/{match_id}"},
+        400: {"model": Error, "description": "El código contiene errores de sintaxis o instrucciones prohibidas"},
+        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
+    },
+    tags=["Behaviors"],
+    summary="Probar comportamiento en una cancha 1 vs 1",
+    response_model_by_alias=True,
+)
+async def test_behavior(
+    behavior_test_input: BehaviorTestInput = Body(..., description=""),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
+) -> BehaviorTestStarted:
+    if not BaseBehaviorsApi.subclasses:
+        raise HTTPException(status_code=500, detail="Not implemented")
+    return await BaseBehaviorsApi.subclasses[0](session).test_behavior(behavior_test_input, club.id)
 
 @router.get(
     "/club/behaviors/{behavior_id}",
