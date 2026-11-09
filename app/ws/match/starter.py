@@ -123,14 +123,16 @@ class MatchStarter:
                 league = await leagues.get(match.league_id)
                 squad = await leagues.get_squad_by_match(match_id)
                 total_ticks = league.match_duration_minutes * TICKS_PER_MINUTE
+                allows_draws = league.allows_draws
             else:
                 squad = await FriendlyRepository(session).get_squad_by_match(match_id)
                 total_ticks = FRIENDLY_TOTAL_TICKS
+                allows_draws = True  # los amistosos admiten empate
 
             state, codes = build_match_state(match, squad, total_ticks=total_ticks)
             info = build_match_info(home_club, away_club, squad)
 
-            live = start_match(match_id, state, codes, info)
+            live = start_match(match_id, state, codes, info, allows_draws=allows_draws)
             await MatchRepository(session).set_status(match_id, MatchStatus.in_progress)
 
         task = asyncio.create_task(
