@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 
 from app.apis.leagues_api_base import BaseLeaguesApi
 from app.impl.friendlies_api_impl import _validate_squad
+from app.impl.match_api_impl import _to_match
 from app.db.club import ClubDB
 from app.db.match import MatchStatus
 from app.db.session import SessionLocal
@@ -243,9 +244,9 @@ class LeaguesApiImpl(BaseLeaguesApi):
                 status_code=409, detail="El club ya está inscripto en esta liga"
             )
 
-        # tras la inscripcion del club, armo el evento ClubRegistered y lo transmito por el lobby de la liga
+        # tras la inscripcion del club, armo el evento clubRegistered y lo transmito por el lobby de la liga
         event_club_registered = {
-            "type": "ClubRegistered",
+            "type": "clubRegistered",
             "data": {
                 "league_id": str(league_id),
                 "club_id": str(club.id),
@@ -287,9 +288,9 @@ class LeaguesApiImpl(BaseLeaguesApi):
         # obtenemos la nueva cantidad de inscriptos (necesaria para enviar en el evento)
         enrolled_clubs = await repo.list_clubs_of_league(league_id)
 
-        # tras el abandono de liga, armamos y emitimos el evento ClubLeft
+        # tras el abandono de liga, armamos y emitimos el evento clubLeft
         event_club_left = {
-            "type": "ClubLeft",
+            "type": "clubLeft",
             "data": {
                 "league_id": str(league_id),
                 "club_id": str(club.id),
@@ -341,9 +342,9 @@ class LeaguesApiImpl(BaseLeaguesApi):
                 status_code=500, detail="Error inesperado al iniciar la liga"
             )  # internal server error <-- REVISAR
 
-        # emitir evento ws LeagueStarted
+        # emitir evento ws leagueStarted
         event_league_started = {
-            "type": "LeagueStarted",
+            "type": "leagueStarted",
             "data": {"league_id": str(league_id)},
         }
         await league_lobby_connection.broadcast(league_id, event_league_started)
@@ -422,18 +423,4 @@ class LeaguesApiImpl(BaseLeaguesApi):
         matches = await MatchRepository(self._session).list_by_league(
             league_id, status=match_status
         )
-        return [
-            Match(
-                id=m.id,
-                league_id=m.league_id,
-                round_number=m.round_number,
-                home_club_id=m.home_club_id,
-                home_club_name=m.home_club.club_name if m.home_club else None,  #aca usamos el home_club que trajimos a memoria en el repo
-                away_club_id=m.away_club_id,
-                away_club_name=m.away_club.club_name if m.away_club else None,  #aca usamos el away_club que trajimos a memoria en el repo
-                status=m.status.value,
-                home_score=m.home_score,
-                away_score=m.away_score,
-            )
-            for m in matches
-        ]
+        return [_to_match(m) for m in matches]

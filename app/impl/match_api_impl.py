@@ -30,6 +30,21 @@ from app.ws.match.substitutions import (
 from app.ws.match.live_behavior import validate_player_on_field, PlayerNotOnField, update_info_match
 from app.ws.match.messages import behavior_changed_message
 
+def _to_match(match_db: MatchDB) -> Match:
+    return Match(
+        id=match_db.id,
+        league_id=match_db.league_id,
+        round_number=match_db.round_number,
+        home_club_id=match_db.home_club_id,
+        home_club_name=match_db.home_club.club_name if match_db.home_club else None,
+        away_club_id=match_db.away_club_id,
+        away_club_name=match_db.away_club.club_name if match_db.away_club else None,
+        status=match_db.status.value,
+        home_score=match_db.home_score,
+        away_score=match_db.away_score,
+    )
+
+
 class MatchApiImpl(BaseMatchApi):
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -40,18 +55,7 @@ class MatchApiImpl(BaseMatchApi):
         if not match_db:
             raise HTTPException(status_code=404, detail="El partido no existe")
         # mapeamos al modelo pydantic
-        return Match(
-            id=match_db.id,
-            league_id=match_db.league_id,
-            round_number=match_db.round_number,
-            home_club_id=match_db.home_club_id,
-            home_club_name=match_db.home_club.club_name if match_db.home_club else None,    #aca usamos el home_club que trajimos a memoria en el repo
-            away_club_id=match_db.away_club_id,
-            away_club_name=match_db.away_club.club_name if match_db.away_club else None,    #aca usamos el away_club que trajimos a memoria en el repo
-            status=match_db.status.value,
-            home_score=match_db.home_score,
-            away_score=match_db.away_score,
-        )
+        return _to_match(match_db)
 
     async def set_lineup(self, match_id, submit_lineup_input) -> Match:
         raise NotImplementedError

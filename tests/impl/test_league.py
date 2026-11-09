@@ -832,7 +832,7 @@ async def test_club_registered_event(api, mocks):
     # VERIFICAMOS EL EVENTO WEBSOCKET
     # armamos el evento que esperamos recibir luego de una inscripcion exitosa
     expected_event = {
-        "type": "ClubRegistered",
+        "type": "clubRegistered",
         "data": {
             "league_id": str(league_id),
             "club_id": str(CLUB.id),
@@ -872,7 +872,7 @@ async def test_leave_league_success(api, mocks):
     # VERIFICAMOS EL EVENTO WEBSOCKET
     # armamos el evento que esperamos recibir luego de que alguien se de de baja a la liga
     expected_event = {
-        "type": "ClubLeft",
+        "type": "clubLeft",
         "data": {
             "league_id": str(league_id),
             "club_id": str(CLUB.id),
@@ -971,9 +971,9 @@ async def test_start_league_success(api, mocks):
     # verificamos que se llamo al repositorio para iniciarla
     mocks.league_repo.start_league.assert_awaited_once_with(league_id)
 
-    # verificamos que se emitio el evento ws LeagueStarted
+    # verificamos que se emitio el evento ws leagueStarted
     expected_event = {
-        "type": "LeagueStarted",
+        "type": "leagueStarted",
         "data": {"league_id": str(league_id)},
     }
     mocks.lobby_connection.broadcast.assert_awaited_once_with(league_id, expected_event)
