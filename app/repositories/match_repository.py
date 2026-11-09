@@ -2,6 +2,7 @@ import uuid
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db.match import MatchDB, MatchStatus
 
@@ -25,9 +26,14 @@ class MatchRepository:
         await self._session.refresh(match)
         return match
 
-    async def get_by_id(self, match_id: uuid.UUID) -> MatchDB:
+    # selectinload(MatchDB.home_club/away_club) le dice a SQLAlchemy que durante la ejecucion de la consulta
+    # traiga de antemano los datos de ambos clubes de la tabla clubs (los guarda en memoria para 
+    # despues poder consultar con match.home_club.club_name y match.away_club.club_name)
+    async def get_by_id(self, match_id: uuid.UUID) -> MatchDB | None:
         result = await self._session.execute(
-            select(MatchDB).where(MatchDB.id == match_id)
+            select(MatchDB)
+            .options(selectinload(MatchDB.home_club), selectinload(MatchDB.away_club))
+            .where(MatchDB.id == match_id)
         )
         return result.scalar_one_or_none()
 
@@ -45,8 +51,22 @@ class MatchRepository:
         )
         await self._session.commit()
 
+    async def list_by_league(
+        self,
+        league_id: uuid.UUID,
+        status: MatchStatus | None = None,
+    ) -> list[MatchDB]:
+        stmt = (
+            select(MatchDB)
+            .options(selectinload(MatchDB.home_club), selectinload(MatchDB.away_club))
+            .where(MatchDB.league_id == league_id)
+            .order_by(MatchDB.round_number)
+        )
+        if status is not None:  #opcionalmente filtramos por status
+            stmt = stmt.where(MatchDB.status == status)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
     # TODO: algunos metodos a implementar
-        # list_by_league
         # list_history_by_club
         # list_shared_history

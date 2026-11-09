@@ -11,6 +11,7 @@ from app.ws.match.messages import (
     match_state_message,
     pause_start_message,
     substitution_made_message,
+    behavior_changed_message
 )
 from app.ws.match.pauses import Pause
 from app.ws.match.substitutions import PendingSubstitution
@@ -227,3 +228,21 @@ def test_substitution_made_has_the_players_and_the_behavior(match_state):
     assert data.player_in_id == "h4"
     assert data.behavior_id == "b-1"
     assert data.behavior_name == "Atacante"
+
+def test_behavior_changed_serializes_as_asyncapi(match_state):
+    match_state.tick = 912
+
+    payload = behavior_changed_message(
+        MATCH_ID, match_state, "h1", "b-nuevo", "Defensor"
+    ).model_dump(mode="json")
+
+    assert payload == {
+        "type": "behaviorChanged",
+        "data": {
+            "match_id": MATCH_ID,
+            "tick": 912,
+            "player_id": "h1",
+            "behavior_id": "b-nuevo",
+            "behavior_name": "Defensor",
+        },
+    }

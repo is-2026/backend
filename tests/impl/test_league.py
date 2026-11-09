@@ -10,7 +10,9 @@ from sqlalchemy.exc import IntegrityError
 from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
+from app.db.match import MatchDB, MatchStatus
 from app.db.player import PlayerDB
+from app.db.standings import LeagueStandingsDB
 from app.db.user import UserDB
 from app.repositories.league_repository import (
     ClubAlreadyEnrolled,
@@ -74,18 +76,24 @@ def mocks(monkeypatch):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
     mock.hash_password = AsyncMock(return_value="hashed")
     mock.verify_password = AsyncMock(return_value=True)
     mock.lobby_connection = MagicMock()
     mock.lobby_connection.broadcast = AsyncMock()
     mock.lobby_connection.close_all = AsyncMock()
+    mock.league_scheduler = MagicMock()
+    mock.match_repo = AsyncMock()
 
     monkeypatch.setattr(
         league_api_impl, "PlayerRepository", MagicMock(return_value=mock.player_repo)
     )  # Seteo lo que mockee
     monkeypatch.setattr(
         league_api_impl, "LeagueRepository", MagicMock(return_value=mock.league_repo)
+    )
+    monkeypatch.setattr(
+        league_api_impl, "MatchRepository", MagicMock(return_value=mock.match_repo)
     )
     monkeypatch.setattr(league_api_impl, "hash_password", mock.hash_password)
     monkeypatch.setattr(league_api_impl, "verify_password", mock.verify_password)
@@ -101,7 +109,7 @@ def mocks(monkeypatch):
 def api(
     mocks,
 ):  # Aca directamente mockeo toda la clase, porque la voy a necesitar para los tests.
-    return LeaguesApiImpl(mocks.session)
+    return LeaguesApiImpl(mocks.session, mocks.league_scheduler)
 
 
 async def test_create_league_public(api, mocks):
@@ -230,6 +238,7 @@ async def test_get_league_public(api, mocks):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
         creator_club_id=CLUB.id,
     )
 
@@ -243,8 +252,8 @@ async def test_get_league_public(api, mocks):
     assert result.name == "LPF chiqui Mafia"
     assert result.is_private is False
     assert result.status == "not_started"
-    assert result.creator_club_id == CLUB.id
     assert result.registered_clubs[0].club_name == "River Plate"
+    assert result.creator_club_id == CLUB.id
 
     mocks.league_repo.get.assert_awaited_once_with(league.id)  # busco la liga
 
@@ -256,6 +265,7 @@ async def test_get_league_private(api, mocks):
         hashed_password="password",
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
         creator_club_id=CLUB.id,
     )
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
@@ -279,6 +289,7 @@ async def test_get_league_not_available(api, mocks, status):
         hashed_password="password",
         max_clubs=5,
         status=status,
+        allows_draws=True,
     )
 
     mocks.league_repo.get.return_value = league
@@ -299,6 +310,7 @@ async def test_list_leagues_public(api, mocks):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River")
     mocks.league_repo.list_not_started.return_value = [league]
@@ -322,6 +334,7 @@ async def test_list_leagues_private(api, mocks):
         hashed_password="hash",
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
     mocks.league_repo.list_not_started.return_value = [league]
     mocks.league_repo.list_clubs_of_league.return_value = []
@@ -340,6 +353,26 @@ async def test_list_leagues_empty(api, mocks):
     assert result == []
     mocks.league_repo.list_clubs_of_league.assert_not_awaited()
 
+async def test_list_my_leagues(api, mocks):
+    league = SimpleNamespace(
+        id=uuid.uuid4(),
+        name="Liga",
+        hashed_password=None,
+        max_clubs=5,
+        status="started",
+    )
+    clubs= [SimpleNamespace(id=uuid.uuid4()), SimpleNamespace(id=uuid.uuid4())]
+    mocks.league_repo.list_leagues_of_club.return_value = [league]
+    mocks.league_repo.list_clubs_of_league.return_value = clubs
+    
+    result = await api.list_my_leagues(CLUB.id)
+
+    assert len(result) == 1
+    assert result[0].id == league.id
+    assert result[0].max_clubs == 5
+    assert result[0].status == "started"
+    assert result[0].club_count == 2
+    mocks.league_repo.list_leagues_of_club.assert_awaited_once_with(CLUB.id)
 
 # tests de endpoint
 
@@ -458,6 +491,7 @@ async def test_endpoint_create_league_returns_201(client, session, club):
     assert data["is_private"] is False
     assert data["status"] == "not_started"
     assert data["max_clubs"] == 5
+    assert data["allows_draws"] is True  # sin el campo, admite empates
     assert data["registered_clubs"][0]["club_name"] == "Instituto"
     assert await count_leagues(session) == 1
     inscripciones = await session.scalar(
@@ -468,6 +502,16 @@ async def test_endpoint_create_league_returns_201(client, session, club):
     )
     assert inscripciones == 1  # el creador queda inscripto
     assert jugadores == 6
+
+
+async def test_endpoint_create_league_without_draws(client, session, club):
+    body = await make_body(session, club)
+    body["allows_draws"] = False
+
+    r = await client.post(URL, json=body, headers=auth_header(club))
+
+    assert r.status_code == 201
+    assert r.json()["allows_draws"] is False
 
 
 async def test_endpoint_create_league_with_password_is_private(client, session, club):
@@ -635,6 +679,50 @@ async def test_endpoint_list_leagues_without_token_returns_401(client, session):
     assert r.status_code == 401
     assert "message" in r.json()
 
+# --- GET /club/leagues (ligas de mi club) ---
+MY_LEAGUES_URL = "/club/leagues"
+
+async def test_endpoint_list_my_leagues_returns_200(client, session, club):
+    await add_league(session, club, "Liga no iniciada", "not_started")
+    await add_league(session, club, "Liga iniciada", "started")
+    await add_league(session, club, "Liga cancelada", "cancelled")
+
+    r = await client.get(MY_LEAGUES_URL, headers=auth_header(club))
+
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 2
+    for league in data:
+        assert league["status"] != "cancelled"
+        assert league["club_count"] == 1
+
+async def test_endpoint_list_my_leagues_not_enrolled(client, session, club):
+    # liga creada por otro club, en la que mi club no está inscripto
+    other_user_id = uuid.uuid4()
+    other_club = SimpleNamespace(id=uuid.uuid4(), user_id=other_user_id)
+    session.add(UserDB(id=other_user_id, email="otro@prueba.com", hashed_password="hash"))
+    await session.flush()
+    session.add(
+        ClubDB(
+            id=other_club.id,
+            club_name="River Plate",
+            avatar_url="https://img.com/avatar.png",
+            user_id=other_user_id,
+        )
+    )
+    await session.commit()
+    await add_league(session, other_club, "Liga ajena", "started")
+
+    r = await client.get(MY_LEAGUES_URL, headers=auth_header(club))
+
+    assert r.status_code == 200
+    assert r.json() == []
+
+async def test_endpoint_list_my_leagues_without_token_returns_401(client, session):
+    r = await client.get(MY_LEAGUES_URL)
+
+    assert r.status_code == 401
+    assert "message" in r.json()
 
 async def test_join_league_public_endpoint(api, mocks):
     # configuramos la liga que vamos a obtener
@@ -748,8 +836,8 @@ async def test_club_registered_event(api, mocks):
     # VERIFICAMOS EL EVENTO WEBSOCKET
     # armamos el evento que esperamos recibir luego de una inscripcion exitosa
     expected_event = {
-        "type": "ClubRegistered",
-        "payload": {
+        "type": "clubRegistered",
+        "data": {
             "league_id": str(league_id),
             "club_id": str(CLUB.id),
             "club_name": CLUB.club_name,
@@ -788,8 +876,8 @@ async def test_leave_league_success(api, mocks):
     # VERIFICAMOS EL EVENTO WEBSOCKET
     # armamos el evento que esperamos recibir luego de que alguien se de de baja a la liga
     expected_event = {
-        "type": "ClubLeft",
-        "payload": {
+        "type": "clubLeft",
+        "data": {
             "league_id": str(league_id),
             "club_id": str(CLUB.id),
             "registered_count": 0,
@@ -868,6 +956,7 @@ async def test_start_league_success(api, mocks):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
         creator_club_id=CLUB.id,  #el club que llama es el creador
     )
     mocks.league_repo.get.return_value = league
@@ -886,12 +975,13 @@ async def test_start_league_success(api, mocks):
     # verificamos que se llamo al repositorio para iniciarla
     mocks.league_repo.start_league.assert_awaited_once_with(league_id)
 
-    # verificamos que se emitio el evento ws LeagueStarted
+    # verificamos que se emitio el evento ws leagueStarted
     expected_event = {
-        "type": "LeagueStarted",
-        "payload": {"league_id": str(league_id)},
+        "type": "leagueStarted",
+        "data": {"league_id": str(league_id)},
     }
     mocks.lobby_connection.broadcast.assert_awaited_once_with(league_id, expected_event)
+    mocks.league_scheduler.schedule.assert_called_once_with(league_id)
 
     # verificamos que el LeagueDetail devuelto tenga el estado en "started"
     assert result.status == "started"
@@ -990,6 +1080,418 @@ async def test_start_league_repo_failure_returns_500(api, mocks):
 
     # verificamos que si falla la base de datos, NUNCA se emite el evento ws
     mocks.lobby_connection.broadcast.assert_not_awaited()
+    mocks.league_scheduler.schedule.assert_not_called()
+
+
+# endpoint tabla de posiciones
+@pytest.mark.parametrize("status", ["started", "finished"])
+async def test_get_standings_success(api, mocks, status):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = SimpleNamespace(
+        id=league_id, status=status
+    )
+    club1_id = uuid.uuid4()
+    club2_id = uuid.uuid4()
+    mocks.league_repo.get_standings.return_value = [
+        (
+            SimpleNamespace(
+                club_id=club1_id,
+                points=6,
+                rank=1,
+                matches_played=2,
+                won=2,
+                drawn=0,
+                lost=0,
+                goals_for=5,
+                goals_against=1,
+                goals_dif=4,
+            ),
+            "River Plate",
+        ),
+        (
+            SimpleNamespace(
+                club_id=club2_id,
+                points=0,
+                rank=2,
+                matches_played=2,
+                won=0,
+                drawn=0,
+                lost=2,
+                goals_for=1,
+                goals_against=5,
+                goals_dif=-4,
+            ),
+            "Boca Juniors",
+        ),
+    ]
+
+    result = await api.get_standings(league_id)
+
+    mocks.league_repo.get.assert_awaited_once_with(league_id)
+    mocks.league_repo.get_standings.assert_awaited_once_with(league_id)
+    assert len(result) == 2
+    assert result[0].club_id == club1_id
+    assert result[0].club_name == "River Plate"
+    assert result[0].points == 6
+    assert result[0].rank == 1
+    assert result[0].matches_played == 2
+    assert result[0].won == 2
+    assert result[0].drawn == 0
+    assert result[0].lost == 0
+    assert result[0].goals_for == 5
+    assert result[0].goals_against == 1
+    assert result[0].goals_dif == 4
+    assert result[1].club_id == club2_id
+    assert result[1].club_name == "Boca Juniors"
+    assert result[1].rank == 2
+
+
+async def test_get_standings_league_not_found(api, mocks):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = None
+
+    with pytest.raises(HTTPException) as error:
+        await api.get_standings(league_id)
+
+    assert error.value.status_code == 404
+    mocks.league_repo.get_standings.assert_not_awaited()
+
+
+@pytest.mark.parametrize("status", ["not_started", "cancelled"])
+async def test_get_standings_league_not_started_returns_409(api, mocks, status):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = SimpleNamespace(
+        id=league_id, status=status
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await api.get_standings(league_id)
+
+    assert error.value.status_code == 409
+    mocks.league_repo.get_standings.assert_not_awaited()
+
+
+# chequeamos tambien que el endpoint los mande ordenados (el repo ya lo hace, el endpoint
+# solo deberia mapear al modelo y devolver la lista)
+async def test_endpoint_get_standings_returns_200_ordered(client, session, club):
+    league_id = uuid.uuid4()
+    other_user_id = uuid.uuid4()
+    other_club_id = uuid.uuid4()
+    session.add(
+        UserDB(id=other_user_id, email="rival@prueba.com", hashed_password="hash")
+    )
+    await session.flush()
+    session.add(
+        ClubDB(
+            id=other_club_id,
+            club_name="Belgrano",
+            avatar_url="https://img.com/b.png",
+            user_id=other_user_id,
+        )
+    )
+    session.add(
+        LeagueDB(
+            id=league_id,
+            name="Liga En Curso",
+            max_clubs=5,
+            match_duration_minutes=10,
+            status="started",
+            creator_club_id=club.id,
+        )
+    )
+    await session.flush()
+    session.add_all(
+        [
+            LeagueStandingsDB(
+                league_id=league_id,
+                club_id=club.id,
+                rank=2,
+                points=1,
+                matches_played=1,
+                won=0,
+                drawn=1,
+                lost=0,
+                goals_for=1,
+                goals_against=1,
+                goals_dif=0,
+            ),
+            LeagueStandingsDB(
+                league_id=league_id,
+                club_id=other_club_id,
+                rank=1,
+                points=3,
+                matches_played=1,
+                won=1,
+                drawn=0,
+                lost=0,
+                goals_for=2,
+                goals_against=0,
+                goals_dif=2,
+            ),
+        ]
+    )
+    await session.commit()
+
+    r = await client.get(
+        f"{URL}/{league_id}/standings", headers=auth_header(club)
+    )
+
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 2
+    assert data[0]["club_id"] == str(other_club_id)
+    assert data[0]["club_name"] == "Belgrano"
+    assert data[0]["points"] == 3
+    assert data[0]["rank"] == 1
+    assert data[0]["goals_dif"] == 2
+    assert data[1]["club_id"] == str(club.id)
+    assert data[1]["club_name"] == "Instituto"
+    assert data[1]["points"] == 1
+    assert data[1]["rank"] == 2
+
+
+async def test_endpoint_get_standings_not_found_returns_404(client, club):
+    r = await client.get(
+        f"{URL}/{uuid.uuid4()}/standings", headers=auth_header(club)
+    )
+
+    assert r.status_code == 404
+    assert "message" in r.json()
+
+
+async def test_endpoint_get_standings_not_started_returns_409(
+    client, session, club
+):
+    league_id = uuid.uuid4()
+    session.add(
+        LeagueDB(
+            id=league_id,
+            name="Liga Sin Iniciar",
+            max_clubs=5,
+            match_duration_minutes=10,
+            status="not_started",
+            creator_club_id=club.id,
+        )
+    )
+    await session.commit()
+
+    r = await client.get(
+        f"{URL}/{league_id}/standings", headers=auth_header(club)
+    )
+
+    assert r.status_code == 409
+    assert "message" in r.json()
+
+
+@pytest.mark.parametrize("league_status", ["started", "finished"])
+async def test_list_league_matches_success(api, mocks, league_status):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = SimpleNamespace(
+        id=league_id, status=league_status
+    )
+    match_id = uuid.uuid4()
+    home_id = uuid.uuid4()
+    away_id = uuid.uuid4()
+    mocks.match_repo.list_by_league.return_value = [
+        SimpleNamespace(
+            id=match_id,
+            league_id=league_id,
+            round_number=1,
+            home_club_id=home_id,
+            home_club=SimpleNamespace(club_name="River Plate"),
+            away_club_id=away_id,
+            away_club=SimpleNamespace(club_name="Boca Juniors"),
+            status=MatchStatus.finished,
+            home_score=2,
+            away_score=1,
+        )
+    ]
+
+    result = await api.list_league_matches(league_id, None)
+
+    mocks.league_repo.get.assert_awaited_once_with(league_id)
+    mocks.match_repo.list_by_league.assert_awaited_once_with(
+        league_id, status=None
+    )
+    assert len(result) == 1
+    assert result[0].id == match_id
+    assert result[0].league_id == league_id
+    assert result[0].round_number == 1
+    assert result[0].home_club_id == home_id
+    assert result[0].home_club_name == "River Plate"
+    assert result[0].away_club_id == away_id
+    assert result[0].away_club_name == "Boca Juniors"
+    assert result[0].status == "finished"
+    assert result[0].home_score == 2
+    assert result[0].away_score == 1
+
+
+async def test_list_league_matches_with_status_filter(api, mocks):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = SimpleNamespace(
+        id=league_id, status="started"
+    )
+    mocks.match_repo.list_by_league.return_value = []
+
+    result = await api.list_league_matches(league_id, "scheduled")
+
+    assert result == []
+    mocks.match_repo.list_by_league.assert_awaited_once_with(
+        league_id, status=MatchStatus.scheduled
+    )
+
+
+async def test_list_league_matches_invalid_status_returns_400(api, mocks):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = SimpleNamespace(
+        id=league_id, status="started"
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await api.list_league_matches(league_id, "estado_invalido")
+
+    assert error.value.status_code == 400
+    mocks.match_repo.list_by_league.assert_not_awaited()
+
+
+async def test_list_league_matches_not_found_returns_404(api, mocks):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = None
+
+    with pytest.raises(HTTPException) as error:
+        await api.list_league_matches(league_id, None)
+
+    assert error.value.status_code == 404
+    mocks.match_repo.list_by_league.assert_not_awaited()
+
+
+@pytest.mark.parametrize("league_status", ["not_started", "cancelled"])
+async def test_list_league_matches_not_started_returns_409(
+    api, mocks, league_status
+):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = SimpleNamespace(
+        id=league_id, status=league_status
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await api.list_league_matches(league_id, None)
+
+    assert error.value.status_code == 409
+    mocks.match_repo.list_by_league.assert_not_awaited()
+
+
+async def test_endpoint_list_league_matches_returns_200_ordered_and_filtered(
+    client, session, club
+):
+    league_id = uuid.uuid4()
+    other_user_id = uuid.uuid4()
+    other_club_id = uuid.uuid4()
+    session.add(
+        UserDB(id=other_user_id, email="rival@prueba.com", hashed_password="hash")
+    )
+    await session.flush()
+    session.add(
+        ClubDB(
+            id=other_club_id,
+            club_name="Belgrano",
+            avatar_url="https://img.com/b.png",
+            user_id=other_user_id,
+        )
+    )
+    session.add(
+        LeagueDB(
+            id=league_id,
+            name="Liga En Curso",
+            max_clubs=5,
+            match_duration_minutes=10,
+            status="started",
+            creator_club_id=club.id,
+        )
+    )
+    await session.flush()
+
+    m_round_2 = MatchDB(
+        id=uuid.uuid4(),
+        league_id=league_id,
+        round_number=2,
+        home_club_id=club.id,
+        away_club_id=other_club_id,
+        status=MatchStatus.scheduled,
+    )
+    m_round_1 = MatchDB(
+        id=uuid.uuid4(),
+        league_id=league_id,
+        round_number=1,
+        home_club_id=other_club_id,
+        away_club_id=club.id,
+        status=MatchStatus.finished,
+        home_score=3,
+        away_score=1,
+    )
+    session.add_all([m_round_2, m_round_1])
+    await session.commit()
+
+    # sin filtro: devuelve ambos ordenados por round_number
+    r = await client.get(
+        f"{URL}/{league_id}/matches", headers=auth_header(club)
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 2
+    assert data[0]["id"] == str(m_round_1.id)
+    assert data[0]["league_id"] == str(league_id)
+    assert data[0]["round_number"] == 1
+    assert data[0]["home_club_id"] == str(other_club_id)
+    assert data[0]["home_club_name"] == "Belgrano"
+    assert data[0]["away_club_id"] == str(club.id)
+    assert data[0]["away_club_name"] == "Instituto"
+    assert data[0]["status"] == "finished"
+    assert data[0]["home_score"] == 3
+    assert data[0]["away_score"] == 1
+    assert data[1]["id"] == str(m_round_2.id)
+    assert data[1]["round_number"] == 2
+    assert data[1]["status"] == "scheduled"
+
+    # con filtro status=scheduled
+    r_filtered = await client.get(
+        f"{URL}/{league_id}/matches?status=scheduled", headers=auth_header(club)
+    )
+    assert r_filtered.status_code == 200
+    filtered_data = r_filtered.json()
+    assert len(filtered_data) == 1
+    assert filtered_data[0]["id"] == str(m_round_2.id)
+
+
+async def test_endpoint_list_league_matches_not_found_returns_404(client, club):
+    r = await client.get(
+        f"{URL}/{uuid.uuid4()}/matches", headers=auth_header(club)
+    )
+    assert r.status_code == 404
+    assert "message" in r.json()
+
+
+async def test_endpoint_list_league_matches_not_started_returns_409(
+    client, session, club
+):
+    league_id = uuid.uuid4()
+    session.add(
+        LeagueDB(
+            id=league_id,
+            name="Liga Sin Iniciar",
+            max_clubs=5,
+            match_duration_minutes=10,
+            status="not_started",
+            creator_club_id=club.id,
+        )
+    )
+    await session.commit()
+
+    r = await client.get(
+        f"{URL}/{league_id}/matches", headers=auth_header(club)
+    )
+    assert r.status_code == 409
+    assert "message" in r.json()
 
 
 async def test_cancel_league_success(api, mocks):
@@ -1019,7 +1521,7 @@ async def test_cancel_league_not_found(api, mocks):
 
     with pytest.raises(HTTPException) as error:
         await api.cancel_league(league_id, CLUB)
-    
+
     assert error.value.status_code == 404
     mocks.league_repo.cancel_league.assert_not_awaited()
     mocks.lobby_connection.broadcast.assert_not_awaited()
@@ -1036,7 +1538,7 @@ async def test_cancel_league_not_creator(api, mocks):
 
     with pytest.raises(HTTPException) as error:
         await api.cancel_league(league_id, CLUB)
-    
+
     assert error.value.status_code == 403
     assert error.value.detail == "Solo el creador de la liga puede cancelarla"
     mocks.league_repo.cancel_league.assert_not_awaited()
@@ -1052,6 +1554,6 @@ async def test_cancel_league_not_cancellable(api, mocks, league_status):
 
     with pytest.raises(HTTPException) as error:
         await api.cancel_league(league_id, CLUB)
-    
+
     assert error.value.status_code == 409
     mocks.league_repo.cancel_league.assert_not_awaited()

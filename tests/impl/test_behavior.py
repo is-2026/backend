@@ -8,6 +8,7 @@ from app.db.behavior import BehaviorDB
 from app.engine.behavior_exec import InvalidBehaviorCode
 from app.engine.validation import validate_behavior_code
 from app.impl.behavior_api_impl import BehaviorApiImpl
+from app.models.behavior_test_input import BehaviorTestInput
 from app.models.create_behavior_input import CreateBehaviorInput, UpdateBehaviorInput
 from app.repositories.behavior_repository import DuplicateNameBehavior
 
@@ -477,3 +478,32 @@ async def test_delete_behavior_not_exist(mocked_repo_class):
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "El comportamiento no existe"
     mocked_repo.delete.assert_not_called()
+
+@patch("app.impl.behavior_api_impl.BehaviorRepository")
+@patch("app.impl.behavior_api_impl.start_behavior_test", new_callable=AsyncMock)
+async def test_test_behavior_success(mocked_start, mocked_repo_class):
+    club_id = uuid.uuid4()
+    match_id = uuid.uuid4()
+    mocked_start.return_value = match_id
+    data = BehaviorTestInput(code="def decide_action():\n    pass")
+
+    result = await BehaviorApiImpl(MagicMock()).test_behavior(data, club_id)
+
+    assert result.match_id == match_id
+    mocked_start.assert_awaited_once_with(club_id, data.code)
+    mocked_repo_class.assert_not_called()  # no toca la base
+
+
+@patch("app.impl.behavior_api_impl.validate_behavior_code")
+@patch("app.impl.behavior_api_impl.start_behavior_test", new_callable=AsyncMock)
+async def test_test_behavior_invalid_code(mocked_start, mocked_validate):
+    mocked_validate.side_effect = InvalidBehaviorCode("Línea 1: solo se puede importar math")
+    data = BehaviorTestInput(code="import os")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await BehaviorApiImpl(MagicMock()).test_behavior(data, uuid.uuid4())
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Línea 1: solo se puede importar math"
+    mocked_validate.assert_called_once_with(data.code, "player")
+    mocked_start.assert_not_called()  # con código inválido no arranca la prueba

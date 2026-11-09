@@ -10,10 +10,11 @@ from app.apis.match_api_base import BaseMatchApi
 from app.db.match import MatchDB
 from app.models.match import Match
 from app.models.substitution import Substitution
+from app.models.change_live_behavior_request import ChangeLiveBehaviorRequest
 from app.repositories.behavior_repository import BehaviorRepository
 from app.repositories.match_repository import MatchRepository
 from app.ws.connection_manager import ConnectionManager
-from app.ws.match.runner import LiveMatch, Phase, live_matches
+from app.ws.match.runner import LiveMatch, Phase, live_matches, match_connections
 from app.ws.match.substitutions import (
     ClubNotInMatch,
     InvalidSubstitution,
@@ -26,6 +27,22 @@ from app.ws.match.substitutions import (
     substitution_window,
     validate_players,
 )
+from app.ws.match.live_behavior import validate_player_on_field, PlayerNotOnField, update_info_match
+from app.ws.match.messages import behavior_changed_message
+
+def _to_match(match_db: MatchDB) -> Match:
+    return Match(
+        id=match_db.id,
+        league_id=match_db.league_id,
+        round_number=match_db.round_number,
+        home_club_id=match_db.home_club_id,
+        home_club_name=match_db.home_club.club_name if match_db.home_club else None,
+        away_club_id=match_db.away_club_id,
+        away_club_name=match_db.away_club.club_name if match_db.away_club else None,
+        status=match_db.status.value,
+        home_score=match_db.home_score,
+        away_score=match_db.away_score,
+    )
 
 
 class MatchApiImpl(BaseMatchApi):
@@ -38,22 +55,53 @@ class MatchApiImpl(BaseMatchApi):
         if not match_db:
             raise HTTPException(status_code=404, detail="El partido no existe")
         # mapeamos al modelo pydantic
-        return Match(
-            id=str(match_db.id),
-            home_club_id=str(match_db.home_club_id),
-            away_club_id=str(match_db.away_club_id),
-            status=match_db.status.value,
-            home_score=match_db.home_score,
-            away_score=match_db.away_score,
-        )
+        return _to_match(match_db)
 
     async def set_lineup(self, match_id, submit_lineup_input) -> Match:
         raise NotImplementedError
 
     async def change_live_behavior(
-        self, match_id, player_id, change_live_behavior_request
+        self,
+        match_id: uuid.UUID,
+        player_id: uuid.UUID,
+        change_live_behavior_request: ChangeLiveBehaviorRequest,
+        club_id: uuid.UUID,
     ) -> None:
-        raise NotImplementedError
+        live = live_matches.get(match_id)
+        if live is None:
+            raise HTTPException(status_code=404, detail="El partido no está en juego")
+
+        team_id = str(club_id)
+        try:
+            get_side(team_id, live.info)
+        except ClubNotInMatch as e:
+            raise HTTPException(
+                status_code=403, detail="El club no juega este partido"
+            ) from e
+
+        if live.phase == Phase.PENALTIES:
+            raise HTTPException(
+                status_code=409, detail="El partido se encuentra en penales"
+            )
+        player = str(player_id)
+
+        try:
+            validate_player_on_field(live.state, live.info, team_id, player)
+        except PlayerNotOnField as exc_info:
+            raise HTTPException(status_code=404, detail=str(exc_info)) from exc_info
+
+        behavior = await BehaviorRepository(self._session).get_id_and_club(
+            change_live_behavior_request.behavior_id, club_id
+        )
+        if behavior is None or behavior.kind != "player":
+            raise HTTPException(status_code=400, detail="El comportamiento no existe")
+
+        live.executor.set_behavior(player, behavior.code)
+        update_info_match(live.info, team_id, player, str(behavior.id), behavior.name)
+
+        message = behavior_changed_message(str(match_id), live.state, player ,str(behavior.id), behavior.name ) #armo el mensaje
+        await match_connections.broadcast(live.match_id, message.model_dump(mode = "json")) #mando el mensaje a todos los clientes conectados al canal
+        #convierto el modelo en un dict para poder dsp pasarlo a json, porque broadcast recibe un dict no un modelo.
 
     async def schedule_substitution(
         self, match_id, schedule_substitution_input, club_id
@@ -75,10 +123,6 @@ class MatchApiImpl(BaseMatchApi):
         )
         if behavior is None or behavior.kind != "player":
             raise HTTPException(status_code=400, detail="El comportamiento no existe")
-
-        if match_id not in live_matches:
-            # terminó mientras fuimos a buscar el behavior a la db
-            raise HTTPException(status_code=404, detail="El partido no está en juego")
 
         player_out_id = str(schedule_substitution_input.player_out_id)
         player_in_id = str(schedule_substitution_input.player_in_id)

@@ -40,3 +40,39 @@ SOCIAL_DISTANCING = 1.0
 
 # Cantidad de pasadas a la hora de separar jugadores
 SEPARATION_PASSES = 3
+
+# Cuánto dura un penal
+PENALTY_TICKS = 80
+
+PENALTIES_PER_TEAM = 5
+
+# Penales totales (incl. los de muerte súbita)
+MAX_PENALTIES = 20
+
+KICKER_FORMATION = ((-0.5, 0.0), (-0.5, 0.0), (-0.5, 0.0))
+GOALIE_FORMATION = (
+    (-FIELD_HALF_LENGTH, 0.0),
+    (-FIELD_HALF_LENGTH, 0.0),
+    (-FIELD_HALF_LENGTH, 0.0),
+)
+
+# Para la sandbox
+# Cuánto tiempo le doy a cada decide_action().
+# Cada hijo tiene 3 jugadores: 3 x 10 ms = 30 ms en el peor caso,
+# y los dos equipos corren en paralelo, así que sobra lugar en el tick de 100 ms.
+CALL_TIMEOUT = 0.01  # (segundos)
+
+# Cuanto puede tardar en cargarse el código (segundos)
+CODE_LOAD_TIMEOUT = 0.1
+
+# Memoria del proceso hijo entero
+MEMORY_LIMIT_MB = 256
+
+# Cuantos timeouts seguidos aguanta un jugador antes de quedar afuera por el resto del
+# partido
+MAX_CONSECUTIVE_TIMEOUTS = 3
+
+# Del padre de sandbox
+TICK_DEADLINE = 0.08  # cuánto espera el padre en cada tick.
+STARTUP_DEADLINE = 2.0  # el primer decide incluye el arranque del hijo
+CLOSE_TIMEOUT = 0.1  # cuanto espera para el join

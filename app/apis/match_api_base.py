@@ -47,6 +47,7 @@ class BaseMatchApi:
         match_id: UUID,
         player_id: UUID,
         change_live_behavior_request: ChangeLiveBehaviorRequest,
+        club_id: UUID,
     ) -> None:
         """Se aplica desde el siguiente tick del simulador."""
         ...

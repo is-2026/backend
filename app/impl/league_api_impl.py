@@ -4,11 +4,16 @@ from fastapi import HTTPException, status
 
 from app.apis.leagues_api_base import BaseLeaguesApi
 from app.impl.friendlies_api_impl import _validate_squad
+from app.impl.match_api_impl import _to_match
 from app.db.club import ClubDB
+from app.db.match import MatchStatus
 from app.db.session import SessionLocal
 from app.models.join_league_input import JoinLeagueInput
 from app.models.create_league_input import CreateLeagueInput
 from app.models.league_detail import LeagueDetail
+from app.models.league_summary import LeagueSummary
+from app.models.match import Match
+from app.models.standings_item import StandingsItem
 from app.repositories.league_repository import (
     LeagueRepository,
     SquadPlayerData,
@@ -16,9 +21,11 @@ from app.repositories.league_repository import (
     ClubNotEnrolled,
     LeagueStartFailure,
 )
+from app.repositories.match_repository import MatchRepository
 from app.repositories.player_repository import PlayerRepository
 from app.db.behavior import BehaviorDB
 from app.security.passwords import hash_password, verify_password
+from app.ws.league_scheduler import LeagueScheduler
 from app.ws.lobby_league import league_lobby_connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,8 +57,13 @@ def _validate_league(data: CreateLeagueInput) -> None:
 
 
 class LeaguesApiImpl(BaseLeaguesApi):
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        league_scheduler: LeagueScheduler | None = None,
+    ) -> None:
         self._session = session
+        self._league_scheduler = league_scheduler
 
     async def create_league(
         self, create_league_input: CreateLeagueInput, club_id: ClubDB
@@ -93,6 +105,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
                     SquadPlayerData(pl.player_id, pl.is_starter, pl.behavior_id)
                     for pl in create_league_input.players
                 ],
+                allows_draws=create_league_input.allows_draws,
             )
         except IntegrityError as exc_info:
             raise HTTPException(
@@ -105,6 +118,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             is_private=league.hashed_password is not None,
             max_clubs=league.max_clubs,
             status=league.status,
+            allows_draws=league.allows_draws,
             registered_clubs=[{"club_id": club_id.id, "club_name": club_id.club_name}],
         )
 
@@ -127,7 +141,28 @@ class LeaguesApiImpl(BaseLeaguesApi):
                     is_private=league.hashed_password is not None,
                     max_clubs=league.max_clubs,
                     status=league.status,
+                    allows_draws=league.allows_draws,
                     registered_clubs=registered,
+                )
+            )
+        return result
+
+    async def list_my_leagues(self, club_id: uuid.UUID) -> list[LeagueSummary]:
+        repo = LeagueRepository(self._session)
+        leagues = await repo.list_leagues_of_club(club_id)
+
+        result = []
+        for league in leagues:
+            clubs = await repo.list_clubs_of_league(league.id)
+
+            result.append(
+                LeagueSummary(
+                    id=league.id,
+                    name=league.name,
+                    is_private=league.hashed_password is not None,
+                    max_clubs=league.max_clubs,
+                    status=league.status,
+                    club_count=len(clubs),
                 )
             )
         return result
@@ -154,6 +189,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             max_clubs=league.max_clubs,
             status=league.status,
             creator_club_id=league.creator_club_id,
+            allows_draws=league.allows_draws,
             registered_clubs=registered,
         )
 
@@ -209,10 +245,10 @@ class LeaguesApiImpl(BaseLeaguesApi):
                 status_code=409, detail="El club ya está inscripto en esta liga"
             )
 
-        # tras la inscripcion del club, armo el evento ClubRegistered y lo transmito por el lobby de la liga
+        # tras la inscripcion del club, armo el evento clubRegistered y lo transmito por el lobby de la liga
         event_club_registered = {
-            "type": "ClubRegistered",
-            "payload": {
+            "type": "clubRegistered",
+            "data": {
                 "league_id": str(league_id),
                 "club_id": str(club.id),
                 "club_name": club.club_name,
@@ -253,10 +289,10 @@ class LeaguesApiImpl(BaseLeaguesApi):
         # obtenemos la nueva cantidad de inscriptos (necesaria para enviar en el evento)
         enrolled_clubs = await repo.list_clubs_of_league(league_id)
 
-        # tras el abandono de liga, armamos y emitimos el evento ClubLeft
+        # tras el abandono de liga, armamos y emitimos el evento clubLeft
         event_club_left = {
-            "type": "ClubLeft",
-            "payload": {
+            "type": "clubLeft",
+            "data": {
                 "league_id": str(league_id),
                 "club_id": str(club.id),
                 "registered_count": len(enrolled_clubs),
@@ -307,12 +343,15 @@ class LeaguesApiImpl(BaseLeaguesApi):
                 status_code=500, detail="Error inesperado al iniciar la liga"
             )  # internal server error <-- REVISAR
 
-        # emitir evento ws LeagueStarted
-        event_payload = {
-            "type": "LeagueStarted",
-            "payload": {"league_id": str(league_id)},
+        # emitir evento ws leagueStarted
+        event_league_started = {
+            "type": "leagueStarted",
+            "data": {"league_id": str(league_id)},
         }
-        await league_lobby_connection.broadcast(league_id, event_payload)
+        await league_lobby_connection.broadcast(league_id, event_league_started)
+        # llama al schedule de la liga para iniciar los partidos
+        if self._league_scheduler is not None:
+            self._league_scheduler.schedule(league_id)
 
         # devolvemos el detalle de la liga actualizada
         registered = [
@@ -325,6 +364,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             is_private=league.hashed_password is not None,
             max_clubs=league.max_clubs,
             status="started",  # ya sabemos que arranco
+            allows_draws=league.allows_draws,
             registered_clubs=registered,
         )
 
@@ -356,3 +396,61 @@ class LeaguesApiImpl(BaseLeaguesApi):
         }
         await league_lobby_connection.broadcast(league_id, event_league_cancelled)
         await league_lobby_connection.close_all(league_id)
+        
+    async def get_standings(self, league_id: uuid.UUID) -> list[StandingsItem]:
+        repo = LeagueRepository(self._session)
+        league = await repo.get(league_id)
+
+        # manejamos errores
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga indicada no existe")
+        if league.status in ("not_started", "cancelled"):
+            raise HTTPException(
+                status_code=409, detail="La liga no esta iniciada"
+            )
+        # traemos los datos desde la bd (el repo ya los manda ordenados)
+        rows = await repo.get_standings(league_id)
+        # mapeamos al modelo StandingsItem
+        return [
+            StandingsItem(
+                club_id=standing.club_id,
+                club_name=club_name,
+                points=standing.points,
+                rank=standing.rank,
+                matches_played=standing.matches_played,
+                won=standing.won,
+                drawn=standing.drawn,
+                lost=standing.lost,
+                goals_for=standing.goals_for,
+                goals_against=standing.goals_against,
+                goals_dif=standing.goals_dif,
+            )
+            for standing, club_name in rows
+        ]
+
+    async def list_league_matches(
+        self,
+        league_id: uuid.UUID,
+        status: str | None = None,
+    ) -> list[Match]:
+        league = await LeagueRepository(self._session).get(league_id)
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga indicada no existe")
+        if league.status in ("not_started", "cancelled"):
+            raise HTTPException(
+                status_code=409, detail="La liga aún no fue iniciada"
+            )
+
+        match_status: MatchStatus | None = None
+        if status is not None:
+            try:
+                match_status = MatchStatus(status)
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=400, detail="Estado de partido inválido"
+                ) from e
+
+        matches = await MatchRepository(self._session).list_by_league(
+            league_id, status=match_status
+        )
+        return [_to_match(m) for m in matches]

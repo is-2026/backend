@@ -39,9 +39,10 @@ class LeagueDetail(BaseModel):
     max_clubs: Optional[StrictInt] = None
     status: Optional[StrictStr] = None
     creator_club_id: Optional[UUID] = None
+    allows_draws: Optional[StrictBool] = None
     registered_clubs: Optional[List[LeagueDetailRegisteredClubsInner]] = Field(default=None, description="Clubes actualmente inscriptos en la liga.")
-    __properties: ClassVar[List[str]] = ["id", "name", "is_private", "max_clubs", "status", "creator_club_id", "registered_clubs"]
-
+    __properties: ClassVar[List[str]] = ["id", "name", "is_private", "max_clubs", "status", "creator_club_id", "allows_draws", "registered_clubs"]
+    
     @field_validator('status')
     def status_validate_enum(cls, value):
         """Validates the enum"""
@@ -114,6 +115,7 @@ class LeagueDetail(BaseModel):
             "max_clubs": obj.get("max_clubs"),
             "status": obj.get("status"),
             "creator_club_id": obj.get("creator_club_id"),
+            "allows_draws": obj.get("allows_draws"),
             "registered_clubs": [LeagueDetailRegisteredClubsInner.from_dict(_item) for _item in obj.get("registered_clubs")] if obj.get("registered_clubs") is not None else None
         })
         return _obj

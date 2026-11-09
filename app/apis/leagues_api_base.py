@@ -38,6 +38,7 @@ class BaseLeaguesApi:
 
     async def list_my_leagues(
         self,
+        club_id : UUID,
     ) -> List[LeagueSummary]:
         """Identifica al club mediante el token de sesión. Devuelve las ligas en las que el club está inscripto."""
         ...

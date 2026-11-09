@@ -51,10 +51,14 @@ class FriendliesApiImpl(BaseFriendliesApi):
     async def list_friendlies(self) -> list[Friendly]:
         repo = FriendlyRepository(self._session)
         friendlies = await repo.list_available_friendlies()
+        if not friendlies:
+            return []
+        names = await repo.get_club_names([f.creator_club_id for f in friendlies])
         return [
             Friendly(
                 id=f.id,
                 creator_club_id=f.creator_club_id,
+                creator_club_name=names.get(f.creator_club_id),
                 rival_club_id=f.rival_club_id,
                 is_private=repo.is_private(f),
                 status=f.status,
@@ -100,10 +104,13 @@ class FriendliesApiImpl(BaseFriendliesApi):
             raise HTTPException(status_code=400, 
                                 detail="La convocatoria no es valida (jugadores repetidos/inexistentes)"
                                 ) from exc_info
-        
+
+        repo = FriendlyRepository(self._session)
+        creator_name = await repo.get_club_name(creator_club_id)
         return Friendly(
             id= friendly.id,
             creator_club_id= friendly.creator_club_id,
+            creator_club_name= creator_name,
             rival_club_id = None,
             is_private= hashed_passw is not None,
             status= friendly.status,
@@ -160,6 +167,7 @@ class FriendliesApiImpl(BaseFriendliesApi):
                                 ) from exc_info
         
         club = await repo.get_club_name(club_id)
+        creator_name = await repo.get_club_name(friendly.creator_club_id)
         starts_at = datetime.now(timezone.utc) + timedelta(seconds=self._window)
         friendly_start_times[friendly_id] = starts_at  # para el que entra al lobby después (el rival)
         await self._lobby.broadcast(friendly_id, {#broadcast envia FriendlyClubRegistered a los q esten en el lobby del amistoso
@@ -175,6 +183,7 @@ class FriendliesApiImpl(BaseFriendliesApi):
         return Friendly(
             id=friendly.id,
             creator_club_id=friendly.creator_club_id,
+            creator_club_name=creator_name,
             rival_club_id= club_id,
             is_private= friendly.hashed_password is not None,
             status= friendly.status,

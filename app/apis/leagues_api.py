@@ -36,7 +36,8 @@ from app.models.extra_models import TokenModel  # noqa: F401
 from app.security_api import get_token_bearerAuth
 from app.db.session import get_session
 from app.db.club import ClubDB
-from app.dependencies import get_current_club
+from app.dependencies import get_current_club, get_league_scheduler
+from app.ws.league_scheduler import LeagueScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
@@ -118,11 +119,13 @@ async def create_league(
 )
 async def list_my_leagues(
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
 ) -> List[LeagueSummary]:
     """Identifica al club mediante el token de sesión. Devuelve las ligas en las que el club está inscripto."""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().list_my_leagues()
+    return await BaseLeaguesApi.subclasses[0](session).list_my_leagues(club.id)
 
 
 @router.get(
@@ -271,11 +274,12 @@ async def start_league(
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
     club: ClubDB = Security(get_current_club),
     session: AsyncSession = Depends(get_session),
+    scheduler: LeagueScheduler = Depends(get_league_scheduler),
 ) -> LeagueDetail:
     """Solo el creador puede iniciarla. Cambia el estado a started y genera el fixture."""
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0](session).start_league(league_id, club)
+    return await BaseLeaguesApi.subclasses[0](session, scheduler).start_league(league_id, club)
 
 
 @router.get(
@@ -297,10 +301,13 @@ async def list_league_matches(
     league_id: UUID = Path(..., description=""),
     status: Optional[str] = Query(None, description="", alias="status"),
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    session: AsyncSession = Depends(get_session),
 ) -> List[Match]:
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().list_league_matches(league_id, status)
+    return await BaseLeaguesApi.subclasses[0](session).list_league_matches(
+        league_id, status
+    )
 
 
 @router.get(
@@ -324,7 +331,8 @@ async def list_league_matches(
 async def get_standings(
     league_id: UUID = Path(..., description=""),
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    session: AsyncSession = Depends(get_session),
 ) -> List[StandingsItem]:
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().get_standings(league_id)
+    return await BaseLeaguesApi.subclasses[0](session).get_standings(league_id)
