@@ -40,7 +40,9 @@ class Match(BaseModel):
     home_score: Optional[StrictInt] = None
     away_score: Optional[StrictInt] = None
     round_number: Optional[StrictInt] = None
-    __properties: ClassVar[List[str]] = ["id", "home_club_id", "away_club_id", "status", "home_score", "away_score", "round_number"]
+    home_penalties: Optional[StrictInt] = None
+    away_penalties: Optional[StrictInt] = None
+    __properties: ClassVar[List[str]] = ["id", "home_club_id", "away_club_id", "status", "home_score", "away_score", "round_number", "home_penalties", "away_penalties"]
 
     model_config = {
         "populate_by_name": True,
@@ -89,6 +91,16 @@ class Match(BaseModel):
         if self.away_score is None and "away_score" in self.model_fields_set:
             _dict['away_score'] = None
 
+        # set to None if home_penalties (nullable) is None
+        # and model_fields_set contains the field
+        if self.home_penalties is None and "home_penalties" in self.model_fields_set:
+            _dict['home_penalties'] = None
+
+        # set to None if away_penalties (nullable) is None
+        # and model_fields_set contains the field
+        if self.away_penalties is None and "away_penalties" in self.model_fields_set:
+            _dict['away_penalties'] = None
+
         return _dict
 
     @classmethod
@@ -107,7 +119,9 @@ class Match(BaseModel):
             "status": obj.get("status"),
             "home_score": obj.get("home_score"),
             "away_score": obj.get("away_score"),
-            "round_number": obj.get("round_number")
+            "round_number": obj.get("round_number"),
+            "home_penalties": obj.get("home_penalties"),
+            "away_penalties": obj.get("away_penalties")
         })
         return _obj
 

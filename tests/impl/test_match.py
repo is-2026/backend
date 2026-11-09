@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
+from app.db.match import MatchDB, MatchStatus
 from app.db.user import UserDB
 from app.engine.constants import TRIANGLE_HOME
 from app.engine.executor import BehaviorExecutor
@@ -419,3 +420,26 @@ async def test_put_penalty_order_404_if_the_match_is_not_being_played(client, cl
     )
 
     assert result.status_code == 404
+
+
+# --- GET /matches/{match_id} ---
+
+
+async def test_get_match_returns_the_penalties(client, club, session):
+    # alcanza con un club de los dos lados para las FKs
+    match = MatchDB(
+        home_club_id=club[0].id,
+        away_club_id=club[0].id,
+        status=MatchStatus.finished,
+        home_score=1,
+        away_score=1,
+        home_penalties=4,
+        away_penalties=3,
+    )
+    session.add(match)
+    await session.commit()
+
+    r = await client.get(f"/matches/{match.id}", headers=auth_header(club))
+
+    assert r.status_code == 200
+    assert (r.json()["home_penalties"], r.json()["away_penalties"]) == (4, 3)

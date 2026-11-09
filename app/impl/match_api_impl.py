@@ -50,6 +50,8 @@ class MatchApiImpl(BaseMatchApi):
             status=match_db.status.value,
             home_score=match_db.home_score,
             away_score=match_db.away_score,
+            home_penalties=match_db.home_penalties,
+            away_penalties=match_db.away_penalties,
         )
 
     async def set_lineup(self, match_id, submit_lineup_input) -> Match:
