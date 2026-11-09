@@ -12,6 +12,7 @@ from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
 from app.db.match import MatchDB, MatchStatus
 from app.db.player import PlayerDB
+from app.db.standings import LeagueStandingsDB
 from app.db.user import UserDB
 from app.repositories.league_repository import (
     ClubAlreadyEnrolled,
@@ -75,6 +76,7 @@ def mocks(monkeypatch):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
     mock.hash_password = AsyncMock(return_value="hashed")
     mock.verify_password = AsyncMock(return_value=True)
@@ -235,6 +237,7 @@ async def test_get_league_public(api, mocks):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
 
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
@@ -259,6 +262,7 @@ async def test_get_league_private(api, mocks):
         hashed_password="password",
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
     mocks.league_repo.get.return_value = league
@@ -281,6 +285,7 @@ async def test_get_league_not_available(api, mocks, status):
         hashed_password="password",
         max_clubs=5,
         status=status,
+        allows_draws=True,
     )
 
     mocks.league_repo.get.return_value = league
@@ -301,6 +306,7 @@ async def test_list_leagues_public(api, mocks):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River")
     mocks.league_repo.list_not_started.return_value = [league]
@@ -324,6 +330,7 @@ async def test_list_leagues_private(api, mocks):
         hashed_password="hash",
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
     )
     mocks.league_repo.list_not_started.return_value = [league]
     mocks.league_repo.list_clubs_of_league.return_value = []
@@ -480,6 +487,7 @@ async def test_endpoint_create_league_returns_201(client, session, club):
     assert data["is_private"] is False
     assert data["status"] == "not_started"
     assert data["max_clubs"] == 5
+    assert data["allows_draws"] is True  # sin el campo, admite empates
     assert data["registered_clubs"][0]["club_name"] == "Instituto"
     assert await count_leagues(session) == 1
     inscripciones = await session.scalar(
@@ -490,6 +498,16 @@ async def test_endpoint_create_league_returns_201(client, session, club):
     )
     assert inscripciones == 1  # el creador queda inscripto
     assert jugadores == 6
+
+
+async def test_endpoint_create_league_without_draws(client, session, club):
+    body = await make_body(session, club)
+    body["allows_draws"] = False
+
+    r = await client.post(URL, json=body, headers=auth_header(club))
+
+    assert r.status_code == 201
+    assert r.json()["allows_draws"] is False
 
 
 async def test_endpoint_create_league_with_password_is_private(client, session, club):
@@ -934,6 +952,7 @@ async def test_start_league_success(api, mocks):
         hashed_password=None,
         max_clubs=5,
         status="not_started",
+        allows_draws=True,
         creator_club_id=CLUB.id,  #el club que llama es el creador
     )
     mocks.league_repo.get.return_value = league
@@ -1058,6 +1077,206 @@ async def test_start_league_repo_failure_returns_500(api, mocks):
     # verificamos que si falla la base de datos, NUNCA se emite el evento ws
     mocks.lobby_connection.broadcast.assert_not_awaited()
     mocks.league_scheduler.schedule.assert_not_called()
+
+
+# endpoint tabla de posiciones
+@pytest.mark.parametrize("status", ["started", "finished"])
+async def test_get_standings_success(api, mocks, status):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = SimpleNamespace(
+        id=league_id, status=status
+    )
+    club1_id = uuid.uuid4()
+    club2_id = uuid.uuid4()
+    mocks.league_repo.get_standings.return_value = [
+        (
+            SimpleNamespace(
+                club_id=club1_id,
+                points=6,
+                rank=1,
+                matches_played=2,
+                won=2,
+                drawn=0,
+                lost=0,
+                goals_for=5,
+                goals_against=1,
+                goals_dif=4,
+            ),
+            "River Plate",
+        ),
+        (
+            SimpleNamespace(
+                club_id=club2_id,
+                points=0,
+                rank=2,
+                matches_played=2,
+                won=0,
+                drawn=0,
+                lost=2,
+                goals_for=1,
+                goals_against=5,
+                goals_dif=-4,
+            ),
+            "Boca Juniors",
+        ),
+    ]
+
+    result = await api.get_standings(league_id)
+
+    mocks.league_repo.get.assert_awaited_once_with(league_id)
+    mocks.league_repo.get_standings.assert_awaited_once_with(league_id)
+    assert len(result) == 2
+    assert result[0].club_id == club1_id
+    assert result[0].club_name == "River Plate"
+    assert result[0].points == 6
+    assert result[0].rank == 1
+    assert result[0].matches_played == 2
+    assert result[0].won == 2
+    assert result[0].drawn == 0
+    assert result[0].lost == 0
+    assert result[0].goals_for == 5
+    assert result[0].goals_against == 1
+    assert result[0].goals_dif == 4
+    assert result[1].club_id == club2_id
+    assert result[1].club_name == "Boca Juniors"
+    assert result[1].rank == 2
+
+
+async def test_get_standings_league_not_found(api, mocks):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = None
+
+    with pytest.raises(HTTPException) as error:
+        await api.get_standings(league_id)
+
+    assert error.value.status_code == 404
+    mocks.league_repo.get_standings.assert_not_awaited()
+
+
+@pytest.mark.parametrize("status", ["not_started", "cancelled"])
+async def test_get_standings_league_not_started_returns_409(api, mocks, status):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = SimpleNamespace(
+        id=league_id, status=status
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await api.get_standings(league_id)
+
+    assert error.value.status_code == 409
+    mocks.league_repo.get_standings.assert_not_awaited()
+
+
+# chequeamos tambien que el endpoint los mande ordenados (el repo ya lo hace, el endpoint
+# solo deberia mapear al modelo y devolver la lista)
+async def test_endpoint_get_standings_returns_200_ordered(client, session, club):
+    league_id = uuid.uuid4()
+    other_user_id = uuid.uuid4()
+    other_club_id = uuid.uuid4()
+    session.add(
+        UserDB(id=other_user_id, email="rival@prueba.com", hashed_password="hash")
+    )
+    await session.flush()
+    session.add(
+        ClubDB(
+            id=other_club_id,
+            club_name="Belgrano",
+            avatar_url="https://img.com/b.png",
+            user_id=other_user_id,
+        )
+    )
+    session.add(
+        LeagueDB(
+            id=league_id,
+            name="Liga En Curso",
+            max_clubs=5,
+            match_duration_minutes=10,
+            status="started",
+            creator_club_id=club.id,
+        )
+    )
+    await session.flush()
+    session.add_all(
+        [
+            LeagueStandingsDB(
+                league_id=league_id,
+                club_id=club.id,
+                rank=2,
+                points=1,
+                matches_played=1,
+                won=0,
+                drawn=1,
+                lost=0,
+                goals_for=1,
+                goals_against=1,
+                goals_dif=0,
+            ),
+            LeagueStandingsDB(
+                league_id=league_id,
+                club_id=other_club_id,
+                rank=1,
+                points=3,
+                matches_played=1,
+                won=1,
+                drawn=0,
+                lost=0,
+                goals_for=2,
+                goals_against=0,
+                goals_dif=2,
+            ),
+        ]
+    )
+    await session.commit()
+
+    r = await client.get(
+        f"{URL}/{league_id}/standings", headers=auth_header(club)
+    )
+
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 2
+    assert data[0]["club_id"] == str(other_club_id)
+    assert data[0]["club_name"] == "Belgrano"
+    assert data[0]["points"] == 3
+    assert data[0]["rank"] == 1
+    assert data[0]["goals_dif"] == 2
+    assert data[1]["club_id"] == str(club.id)
+    assert data[1]["club_name"] == "Instituto"
+    assert data[1]["points"] == 1
+    assert data[1]["rank"] == 2
+
+
+async def test_endpoint_get_standings_not_found_returns_404(client, club):
+    r = await client.get(
+        f"{URL}/{uuid.uuid4()}/standings", headers=auth_header(club)
+    )
+
+    assert r.status_code == 404
+    assert "message" in r.json()
+
+
+async def test_endpoint_get_standings_not_started_returns_409(
+    client, session, club
+):
+    league_id = uuid.uuid4()
+    session.add(
+        LeagueDB(
+            id=league_id,
+            name="Liga Sin Iniciar",
+            max_clubs=5,
+            match_duration_minutes=10,
+            status="not_started",
+            creator_club_id=club.id,
+        )
+    )
+    await session.commit()
+
+    r = await client.get(
+        f"{URL}/{league_id}/standings", headers=auth_header(club)
+    )
+
+    assert r.status_code == 409
+    assert "message" in r.json()
 
 
 @pytest.mark.parametrize("league_status", ["started", "finished"])

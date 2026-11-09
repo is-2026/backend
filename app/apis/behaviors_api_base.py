@@ -6,6 +6,7 @@ from uuid import UUID
 from app.models.behavior import Behavior
 from app.models.create_behavior_input import CreateBehaviorInput, UpdateBehaviorInput
 from app.models.error import Error
+from app.models.behavior_test_input import BehaviorTestInput, BehaviorTestStarted
 from app.security_api import get_token_bearerAuth
 
 
@@ -52,4 +53,12 @@ class BaseBehaviorsApi:
         behavior_id: UUID,
         club_id : UUID
     ) -> None:
+        ...
+    
+    
+    async def test_behavior(
+        self,
+        behavior_test_input: BehaviorTestInput,
+        club_id: UUID,
+    ) -> BehaviorTestStarted:
         ...

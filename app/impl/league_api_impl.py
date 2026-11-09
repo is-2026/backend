@@ -12,6 +12,7 @@ from app.models.create_league_input import CreateLeagueInput
 from app.models.league_detail import LeagueDetail
 from app.models.league_summary import LeagueSummary
 from app.models.match import Match
+from app.models.standings_item import StandingsItem
 from app.repositories.league_repository import (
     LeagueRepository,
     SquadPlayerData,
@@ -103,6 +104,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
                     SquadPlayerData(pl.player_id, pl.is_starter, pl.behavior_id)
                     for pl in create_league_input.players
                 ],
+                allows_draws=create_league_input.allows_draws,
             )
         except IntegrityError as exc_info:
             raise HTTPException(
@@ -115,6 +117,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             is_private=league.hashed_password is not None,
             max_clubs=league.max_clubs,
             status=league.status,
+            allows_draws=league.allows_draws,
             registered_clubs=[{"club_id": club_id.id, "club_name": club_id.club_name}],
         )
 
@@ -137,11 +140,12 @@ class LeaguesApiImpl(BaseLeaguesApi):
                     is_private=league.hashed_password is not None,
                     max_clubs=league.max_clubs,
                     status=league.status,
+                    allows_draws=league.allows_draws,
                     registered_clubs=registered,
                 )
             )
         return result
-    
+
     async def list_my_leagues(self, club_id: uuid.UUID) -> list[LeagueSummary]:
         repo = LeagueRepository(self._session)
         leagues = await repo.list_leagues_of_club(club_id)
@@ -183,6 +187,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             is_private=league.hashed_password is not None,
             max_clubs=league.max_clubs,
             status=league.status,
+            allows_draws=league.allows_draws,
             registered_clubs=registered,
         )
 
@@ -357,8 +362,40 @@ class LeaguesApiImpl(BaseLeaguesApi):
             is_private=league.hashed_password is not None,
             max_clubs=league.max_clubs,
             status="started",  # ya sabemos que arranco
+            allows_draws=league.allows_draws,
             registered_clubs=registered,
         )
+
+    async def get_standings(self, league_id: uuid.UUID) -> list[StandingsItem]:
+        repo = LeagueRepository(self._session)
+        league = await repo.get(league_id)
+
+        # manejamos errores
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga indicada no existe")
+        if league.status in ("not_started", "cancelled"):
+            raise HTTPException(
+                status_code=409, detail="La liga no esta iniciada"
+            )
+        # traemos los datos desde la bd (el repo ya los manda ordenados)
+        rows = await repo.get_standings(league_id)
+        # mapeamos al modelo StandingsItem
+        return [
+            StandingsItem(
+                club_id=standing.club_id,
+                club_name=club_name,
+                points=standing.points,
+                rank=standing.rank,
+                matches_played=standing.matches_played,
+                won=standing.won,
+                drawn=standing.drawn,
+                lost=standing.lost,
+                goals_for=standing.goals_for,
+                goals_against=standing.goals_against,
+                goals_dif=standing.goals_dif,
+            )
+            for standing, club_name in rows
+        ]
 
     async def list_league_matches(
         self,

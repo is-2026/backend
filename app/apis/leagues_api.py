@@ -329,7 +329,8 @@ async def list_league_matches(
 async def get_standings(
     league_id: UUID = Path(..., description=""),
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    session: AsyncSession = Depends(get_session),
 ) -> List[StandingsItem]:
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().get_standings(league_id)
+    return await BaseLeaguesApi.subclasses[0](session).get_standings(league_id)
