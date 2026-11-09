@@ -82,6 +82,7 @@ def mocks(monkeypatch):
     mock.verify_password = AsyncMock(return_value=True)
     mock.lobby_connection = MagicMock()
     mock.lobby_connection.broadcast = AsyncMock()
+    mock.lobby_connection.close_all = AsyncMock()
     mock.league_scheduler = MagicMock()
     mock.match_repo = AsyncMock()
 
@@ -238,6 +239,7 @@ async def test_get_league_public(api, mocks):
         max_clubs=5,
         status="not_started",
         allows_draws=True,
+        creator_club_id=CLUB.id,
     )
 
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
@@ -251,6 +253,7 @@ async def test_get_league_public(api, mocks):
     assert result.is_private is False
     assert result.status == "not_started"
     assert result.registered_clubs[0].club_name == "River Plate"
+    assert result.creator_club_id == CLUB.id
 
     mocks.league_repo.get.assert_awaited_once_with(league.id)  # busco la liga
 
@@ -263,6 +266,7 @@ async def test_get_league_private(api, mocks):
         max_clubs=5,
         status="not_started",
         allows_draws=True,
+        creator_club_id=CLUB.id,
     )
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River Plate")
     mocks.league_repo.get.return_value = league
@@ -307,6 +311,7 @@ async def test_list_leagues_public(api, mocks):
         max_clubs=5,
         status="not_started",
         allows_draws=True,
+        creator_club_id=CLUB.id,
     )
     club = SimpleNamespace(id=uuid.uuid4(), club_name="River")
     mocks.league_repo.list_not_started.return_value = [league]
@@ -331,6 +336,7 @@ async def test_list_leagues_private(api, mocks):
         max_clubs=5,
         status="not_started",
         allows_draws=True,
+        creator_club_id=CLUB.id,
     )
     mocks.league_repo.list_not_started.return_value = [league]
     mocks.league_repo.list_clubs_of_league.return_value = []
@@ -1488,3 +1494,68 @@ async def test_endpoint_list_league_matches_not_started_returns_409(
     )
     assert r.status_code == 409
     assert "message" in r.json()
+
+
+async def test_cancel_league_success(api, mocks):
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id, status="not_started", creator_club_id=CLUB.id
+    )
+    mocks.league_repo.get.return_value = league
+
+    await api.cancel_league(league_id, CLUB)
+
+    # verificamos que se cancelo la liga
+    mocks.league_repo.cancel_league.assert_awaited_once_with(league_id)
+
+    # verificamos que se emitio el evento y se cerro el canal
+    expected_event = {
+        "type": "leagueCancelled",
+        "data": {"league_id": str(league_id)},
+    }
+    mocks.lobby_connection.broadcast.assert_awaited_once_with(league_id, expected_event)
+    mocks.lobby_connection.close_all.assert_awaited_once_with(league_id)
+
+
+async def test_cancel_league_not_found(api, mocks):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = None
+
+    with pytest.raises(HTTPException) as error:
+        await api.cancel_league(league_id, CLUB)
+
+    assert error.value.status_code == 404
+    mocks.league_repo.cancel_league.assert_not_awaited()
+    mocks.lobby_connection.broadcast.assert_not_awaited()
+
+
+async def test_cancel_league_not_creator(api, mocks):
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id,
+        status="not_started",
+        creator_club_id=uuid.uuid4(),  # un ID distinto al del club que hace la llamada
+    )
+    mocks.league_repo.get.return_value = league
+
+    with pytest.raises(HTTPException) as error:
+        await api.cancel_league(league_id, CLUB)
+
+    assert error.value.status_code == 403
+    assert error.value.detail == "Solo el creador de la liga puede cancelarla"
+    mocks.league_repo.cancel_league.assert_not_awaited()
+
+
+@pytest.mark.parametrize("league_status", ["started", "finished", "cancelled"])
+async def test_cancel_league_not_cancellable(api, mocks, league_status):
+    league_id = uuid.uuid4()
+    league = SimpleNamespace(
+        id=league_id, status=league_status, creator_club_id=CLUB.id
+    )
+    mocks.league_repo.get.return_value = league
+
+    with pytest.raises(HTTPException) as error:
+        await api.cancel_league(league_id, CLUB)
+
+    assert error.value.status_code == 409
+    mocks.league_repo.cancel_league.assert_not_awaited()

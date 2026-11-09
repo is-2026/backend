@@ -119,6 +119,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             max_clubs=league.max_clubs,
             status=league.status,
             allows_draws=league.allows_draws,
+            creator_club_id=club_id.id,
             registered_clubs=[{"club_id": club_id.id, "club_name": club_id.club_name}],
         )
 
@@ -142,6 +143,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
                     max_clubs=league.max_clubs,
                     status=league.status,
                     allows_draws=league.allows_draws,
+                    creator_club_id=league.creator_club_id,
                     registered_clubs=registered,
                 )
             )
@@ -188,6 +190,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
             is_private=league.hashed_password is not None,
             max_clubs=league.max_clubs,
             status=league.status,
+            creator_club_id=league.creator_club_id,
             allows_draws=league.allows_draws,
             registered_clubs=registered,
         )
@@ -364,8 +367,38 @@ class LeaguesApiImpl(BaseLeaguesApi):
             max_clubs=league.max_clubs,
             status="started",  # ya sabemos que arranco
             allows_draws=league.allows_draws,
+            creator_club_id=league.creator_club_id,
             registered_clubs=registered,
         )
+
+    async def cancel_league(
+        self,
+        league_id: uuid.UUID,
+        club: ClubDB,
+    ) -> None:
+        repo = LeagueRepository(self._session)
+
+        # verificar si la liga existe (404)
+        league = await repo.get(league_id)
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga indicada no existe")
+        
+        # verificar que el club que llama sea el creador (403)
+        if league.creator_club_id != club.id:
+            raise HTTPException(status_code=403, detail="Solo el creador de la liga puede cancelarla")
+        
+        # verificar que la liga no este iniciada/terminada/cancelada (409)
+        if league.status != "not_started":
+            raise HTTPException(status_code=409, detail="La liga ya se encuentra iniciada, finalizada o cancelada")
+        await repo.cancel_league(league_id)
+
+        # avisamos a los conectados al lobby y cerramos el canal
+        event_league_cancelled = {
+            "type": "leagueCancelled",
+            "data": {"league_id": str(league_id)},
+        }
+        await league_lobby_connection.broadcast(league_id, event_league_cancelled)
+        await league_lobby_connection.close_all(league_id)
 
     async def get_standings(self, league_id: uuid.UUID) -> list[StandingsItem]:
         repo = LeagueRepository(self._session)
