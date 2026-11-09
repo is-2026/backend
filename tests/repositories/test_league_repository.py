@@ -1,4 +1,5 @@
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, select
@@ -12,6 +13,7 @@ from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
 from app.db.player import PlayerDB
 from app.db.user import UserDB
 from app.repositories.league_repository import (
+    _apply_score,
     LeagueRepository,
     SquadPlayerData,
     ClubAlreadyEnrolled,
@@ -565,3 +567,27 @@ async def test_update_standings_and_finish_league(session, session_factory):
     assert (chaca.points, chaca.matches_played, chaca.won, chaca.drawn, chaca.lost, chaca.goals_for, chaca.goals_against, chaca.goals_dif) == (3, 1, 1, 0, 0, 2, 0, 2)
     assert (boca.points, boca.matches_played, boca.won, boca.drawn, boca.lost, boca.goals_for, boca.goals_against, boca.goals_dif) == (1, 1, 0, 1, 0, 1, 1, 0)
     assert (arsenal.points, arsenal.matches_played, arsenal.won, arsenal.drawn, arsenal.lost, arsenal.goals_for, arsenal.goals_against, arsenal.goals_dif) == (1, 2, 0, 1, 1, 1, 3, -2)
+
+
+@pytest.mark.parametrize(
+    "goals_for, goals_against, won_shootout, points, result",
+    [
+        (2, 1, None, 3, "won"),
+        (1, 1, None, 1, "drawn"),
+        (0, 1, None, 0, "lost"),
+        (1, 1, True, 2, "won_penalties"),
+        (1, 1, False, 0, "lost"),
+    ],
+)
+def test_apply_score(goals_for, goals_against, won_shootout, points, result):
+    row = SimpleNamespace(
+        matches_played=0, goals_for=0, goals_against=0, goals_dif=0,
+        won=0, won_penalties=0, drawn=0, lost=0, points=0,
+    )
+
+    _apply_score(row, goals_for, goals_against, won_shootout)
+
+    assert row.points == points
+    assert getattr(row, result) == 1
+    assert row.won + row.won_penalties + row.drawn + row.lost == 1
+    assert (row.goals_for, row.goals_against) == (goals_for, goals_against)

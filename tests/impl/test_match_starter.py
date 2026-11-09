@@ -15,6 +15,7 @@ from app.db.player import PlayerDB
 from app.db.standings import LeagueStandingsDB
 from app.db.user import UserDB
 from app.engine.constants import TICKS_PER_MINUTE
+from app.engine.state import Side
 from app.ws.match import starter as starter_module
 from app.ws.match.runner import live_matches, start_match
 from app.ws.match.starter import MatchStarter
@@ -283,3 +284,27 @@ async def test_saves_penalties_when_there_was_a_shootout(session_factory, match_
     match = await get_match(session_factory, match_id)
     assert match.status == MatchStatus.finished
     assert (match.home_penalties, match.away_penalties) == (4, 3)
+
+
+async def test_league_shootout_gives_2_points_to_the_winner(
+    session_factory, league_match
+):
+    league_id, match_id, home, away = league_match
+    live = SimpleNamespace(
+        match_id=match_id,
+        task=asyncio.create_task(asyncio.sleep(0)),  # el runner ya terminó
+        state=SimpleNamespace(home_score=1, away_score=1),
+        shootout=SimpleNamespace(home_penalties=3, away_penalties=4, winner=Side.AWAY),
+    )
+
+    await MatchStarter(session_factory)._save_result(
+        live, league_id=league_id, home_club_id=home, away_club_id=away
+    )
+
+    async with session_factory() as s:
+        home_standing = await s.get(LeagueStandingsDB, (league_id, home))
+        away_standing = await s.get(LeagueStandingsDB, (league_id, away))
+    assert (away_standing.points, away_standing.won_penalties) == (2, 1)
+    assert (home_standing.points, home_standing.lost) == (0, 1)
+    # los penales no suman goles: solo el 1 a 1
+    assert (home_standing.goals_for, home_standing.goals_against) == (1, 1)
