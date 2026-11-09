@@ -11,6 +11,8 @@ from app.models.create_league_input import CreateLeagueInput
 from app.models.league_detail import LeagueDetail
 from app.models.league_summary import LeagueSummary
 from app.models.standings_item import StandingsItem
+from app.models.squad_player_input import SquadPlayerInput
+from app.models.submit_lineup_input import SubmitLineupInput
 from app.repositories.league_repository import (
     LeagueRepository,
     SquadPlayerData,
@@ -388,3 +390,34 @@ class LeaguesApiImpl(BaseLeaguesApi):
             )
             for standing, club_name in rows
         ]
+
+    async def get_league_lineup(
+        self, league_id: uuid.UUID, club: ClubDB
+    ) -> SubmitLineupInput:
+        repo = LeagueRepository(self._session)
+
+        # verificamos que la liga exista (404)
+        league = await repo.get(league_id)
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga indicada no existe")
+
+        # verificamos que el club este inscripto (403)
+        enrollment = await repo.get_enrollment(league_id, club.id)
+        if not enrollment:
+            raise HTTPException(
+                status_code=403, detail="El club no está inscripto en esta liga"
+            )
+
+        # traemos los 6 convocados y los mapeamos al modelo
+        players = await repo.list_enrollment_players(enrollment.id)
+        return SubmitLineupInput(
+            formation=enrollment.formation,
+            players=[
+                SquadPlayerInput(
+                    player_id=pl.player_id,
+                    is_starter=pl.is_starter,
+                    behavior_id=pl.behavior_id,
+                )
+                for pl in players
+            ],
+        )
