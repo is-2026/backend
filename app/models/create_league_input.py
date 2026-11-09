@@ -23,6 +23,7 @@ import json
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
+from app.models.formation_preset import FormationPreset
 from app.models.squad_player_input import SquadPlayerInput
 try:
     from typing import Self
@@ -38,8 +39,9 @@ class CreateLeagueInput(BaseModel):
     max_clubs: Annotated[int, Field(le=30, strict=True, ge=3)]
     match_duration_minutes: StrictInt
     allows_draws: StrictBool = True
+    formation: FormationPreset
     players: Annotated[List[SquadPlayerInput], Field(min_length=6, max_length=6)] = Field(description="Exactamente 3 con is_starter en true y 3 en false.")
-    __properties: ClassVar[List[str]] = ["name", "password", "max_clubs", "match_duration_minutes", "allows_draws", "players"]
+    __properties: ClassVar[List[str]] = ["name", "password", "max_clubs", "match_duration_minutes", "allows_draws", "formation", "players"]
 
     model_config = {
         "populate_by_name": True,
@@ -107,6 +109,7 @@ class CreateLeagueInput(BaseModel):
             "max_clubs": obj.get("max_clubs"),
             "match_duration_minutes": obj.get("match_duration_minutes"),
             "allows_draws": obj.get("allows_draws", True),
+            "formation": obj.get("formation"),
             "players": [SquadPlayerInput.from_dict(_item) for _item in obj.get("players")] if obj.get("players") is not None else None
         })
         return _obj

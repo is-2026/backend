@@ -42,6 +42,7 @@ def make_create_league_input(starters=3, password=None):
         password=password,
         max_clubs=5,
         match_duration_minutes=10,
+        formation="TRIANGLE",
         players=players,
     )
 
@@ -57,6 +58,7 @@ def make_join_league_input(starters=3, password=None):
     ]
     return JoinLeagueInput(
         password=password,
+        formation="TRIANGLE",
         players=players,
     )
 
@@ -445,6 +447,7 @@ async def make_body(session, club) -> dict:
         "name": "Mi liga",
         "max_clubs": 5,
         "match_duration_minutes": 10,
+        "formation": "TRIANGLE",
         "players": squad,
     }
 
@@ -543,6 +546,27 @@ async def test_endpoint_create_league_max_clubs_too_low(client, session, club):
     r = await client.post(URL, json=body, headers=auth_header(club))
 
     assert r.status_code == 400
+    assert await count_leagues(session) == 0
+
+
+async def test_endpoint_create_league_without_formation(client, session, club):
+    body = await make_body(session, club)
+    del body["formation"]
+
+    r = await client.post(URL, json=body, headers=auth_header(club))
+
+    assert r.status_code == 400
+    assert await count_leagues(session) == 0
+
+
+async def test_endpoint_create_league_unknown_formation(client, session, club):
+    body = await make_body(session, club)
+    body["formation"] = "DIAGONAL"  # no está en el contrato
+
+    r = await client.post(URL, json=body, headers=auth_header(club))
+
+    assert r.status_code == 400
+    assert "formation" in r.json()["message"]
     assert await count_leagues(session) == 0
 
 
