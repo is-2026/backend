@@ -3,12 +3,15 @@ from dataclasses import dataclass
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func
+from sqlalchemy import and_, delete, func, or_, select, update
 
+from app.db.behavior import BehaviorDB
 from app.db.match import MatchDB, MatchStatus
+from app.db.player import PlayerDB
 from app.db.standings import LeagueStandingsDB
 from app.db.club import ClubDB
 from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
+from app.repositories.friendly_repository import SquadMember
 
 from app.fixture.generator import generate_fixture
 
@@ -42,6 +45,21 @@ class ClubRankingTotals:
     lost: int
     goals_for: int
     goals_against: int
+
+
+def _apply_score(row: LeagueStandingsDB, goals_for: int, goals_against: int) -> None:
+    row.matches_played += 1
+    row.goals_for += goals_for
+    row.goals_against += goals_against
+    row.goals_dif = row.goals_for - row.goals_against
+    if goals_for > goals_against:
+        row.won += 1
+        row.points += 3
+    elif goals_for == goals_against:
+        row.drawn += 1
+        row.points += 1
+    else:
+        row.lost += 1
 
 
 class LeagueRepository:
@@ -143,7 +161,19 @@ class LeagueRepository:
             club = await self._session.get(ClubDB, enrollment.club_id)
             clubs.append(club)
         return clubs
-
+    
+    async def list_leagues_of_club(self, club_id: uuid.UUID) -> list[LeagueDB]:
+        # primero las inscripciones del club. después busco la liga de cada una
+        result = await self._session.execute(
+            select(LeagueEnrollmentDB).where(LeagueEnrollmentDB.club_id == club_id)
+        )
+        leagues = []
+        for enrollment in result.scalars().all():
+            league = await self._session.get(LeagueDB, enrollment.league_id)
+            if league.status != "cancelled":
+                leagues.append(league)
+        return leagues
+        
     async def get(
         self, league_id: uuid.UUID
     ) -> LeagueDB | None:  # Si no encuetro la liga devuelvo None
@@ -245,6 +275,7 @@ class LeagueRepository:
 
         await self._session.commit()
 
+
     # suma por club las filas de la tabla de posiciones de las ligas publicas
     # en curso o terminadas. solo clubes con al menos un partido jugado
     async def list_ranking_totals(self) -> list[ClubRankingTotals]:
@@ -288,3 +319,87 @@ class LeagueRepository:
             )
             for row in result.all()
         ]
+
+    async def get_squad_by_match(self, match_id: uuid.UUID) -> list[SquadMember]:
+        """Los convocados vigentes en la liga para los dos clubes de ese partido:
+        primero los titulares, y dentro de cada grupo por numero de camiseta."""
+        result = await self._session.execute(
+            select(
+                LeagueEnrollmentDB.club_id,
+                PlayerDB,
+                LeagueEnrollmentPlayerDB.is_starter,
+                BehaviorDB,
+            )
+            .join(
+                MatchDB,
+                and_(
+                    MatchDB.league_id == LeagueEnrollmentDB.league_id,
+                    or_(
+                        LeagueEnrollmentDB.club_id == MatchDB.home_club_id,
+                        LeagueEnrollmentDB.club_id == MatchDB.away_club_id,
+                    ),
+                ),
+            )
+            .join(
+                LeagueEnrollmentPlayerDB,
+                LeagueEnrollmentPlayerDB.enrollment_id == LeagueEnrollmentDB.id,
+            )
+            .join(PlayerDB, PlayerDB.id == LeagueEnrollmentPlayerDB.player_id)
+            .outerjoin(
+                BehaviorDB, BehaviorDB.id == LeagueEnrollmentPlayerDB.behavior_id
+            )
+            .where(MatchDB.id == match_id)
+            .order_by(LeagueEnrollmentPlayerDB.is_starter.desc(), PlayerDB.number)
+        )
+        return [SquadMember(*row) for row in result.all()]
+
+    async def update_standings(
+        self,
+        league_id: uuid.UUID,
+        home_club_id: uuid.UUID,
+        away_club_id: uuid.UUID,
+        home_score: int,
+        away_score: int,
+    ) -> None:
+        result = await self._session.execute(
+            select(LeagueStandingsDB, ClubDB.club_name)
+            .join(ClubDB, ClubDB.id == LeagueStandingsDB.club_id)
+            .where(LeagueStandingsDB.league_id == league_id)
+            .order_by(LeagueStandingsDB.club_id)
+            .with_for_update()  #bloqueo por fila para evitar race conditions (van a terminar muchos match a la vez)
+            .execution_options(populate_existing=True)  #lee los datos actualizados despues del bloqueo
+        )
+        rows = result.all()
+
+        for row, _ in rows:
+            if row.club_id == home_club_id:
+                _apply_score(row, home_score, away_score)
+            elif row.club_id == away_club_id:
+                _apply_score(row, away_score, home_score)
+
+        # paso intermedio con ranks negativos para no violar UniqueConstraint(league_id, rank)
+        for idx, (row, _) in enumerate(rows, start=1):
+            row.rank = -idx
+        await self._session.flush()
+
+        sorted_rows = sorted(
+            rows,
+            key=lambda item: (
+                -item[0].points,
+                -item[0].goals_dif,
+                -item[0].goals_for,
+                item[1].lower(),
+            ),
+        )
+        for rank, (row, _) in enumerate(sorted_rows, start=1):
+            row.rank = rank
+
+        await self._session.commit()
+
+    async def finish_league(self, league_id: uuid.UUID) -> None:
+        await self._session.execute(
+            update(LeagueDB)
+            .where(LeagueDB.id == league_id)
+            .values(status="finished")
+        )
+        await self._session.commit()
