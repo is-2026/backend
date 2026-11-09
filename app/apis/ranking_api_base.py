@@ -16,5 +16,5 @@ class BaseRankingApi:
     async def get_ranking(
         self,
     ) -> List[RankingItem]:
-        """Calculado a partir de los partidos jugados en instancias públicas (ligas públicas y amistosos)."""
+        """Calculado a partir de los partidos jugados en ligas públicas en curso o terminadas."""
         ...

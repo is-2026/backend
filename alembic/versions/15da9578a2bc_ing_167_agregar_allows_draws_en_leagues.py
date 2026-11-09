@@ -1,7 +1,7 @@
 """ING-167 agregar allows_draws en leagues
 
 Revision ID: 15da9578a2bc
-Revises: 69a8c4218399
+Revises: 1d3cfadd9fd6
 Create Date: 2026-11-09 03:19:05.720795
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '15da9578a2bc'
-down_revision: Union[str, Sequence[str], None] = '69a8c4218399'
+down_revision: Union[str, Sequence[str], None] = '1d3cfadd9fd6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
