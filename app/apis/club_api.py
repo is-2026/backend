@@ -27,6 +27,7 @@ from uuid import UUID
 from app.models.change_avatar_input import ChangeAvatarInput
 from app.models.change_default_formation_input import ChangeDefaultFormationInput
 from app.models.club import Club
+from app.models.club_profile import ClubProfile
 from app.models.create_club_input import CreateClubInput
 from app.models.error import Error
 from app.models.history_item import HistoryItem
@@ -201,7 +202,7 @@ async def get_shared_history(
 @router.get(
     "/clubs/{club_id}",
     responses={
-        200: {"model": Club, "description": "Datos públicos del club"},
+        200: {"model": ClubProfile, "description": "Datos públicos del club"},
         401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
         404: {"model": Error, "description": "Recurso no encontrado"},
     },
@@ -214,7 +215,7 @@ async def get_club(
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
-) -> Club:
+) -> ClubProfile:
     if not BaseClubApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseClubApi.subclasses[0]().get_club(club_id)
+    return await BaseClubApi.subclasses[0](session).get_club(club_id)
