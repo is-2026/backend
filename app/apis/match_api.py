@@ -124,6 +124,10 @@ async def set_lineup(
             "model": Error,
             "description": "El partido o el jugador indicado no existen",
         },
+        409: {
+            "model": Error,
+            "description": "El partido se encuentra en penales"
+        }
     },
     tags=["Match"],
     summary="Cambiar comportamiento en vivo",
@@ -133,13 +137,14 @@ async def change_live_behavior(
     match_id: UUID = Path(..., description=""),
     player_id: UUID = Path(..., description=""),
     change_live_behavior_request: ChangeLiveBehaviorRequest = Body(..., description=""),
-    token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    club: ClubDB = Security(get_current_club),
+    session : AsyncSession = Depends(get_session)
 ) -> None:
     """Se aplica desde el siguiente tick del simulador."""
     if not BaseMatchApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseMatchApi.subclasses[0]().change_live_behavior(
-        match_id, player_id, change_live_behavior_request
+    return await BaseMatchApi.subclasses[0](session).change_live_behavior(
+        match_id, player_id, change_live_behavior_request, club.id
     )
 
 

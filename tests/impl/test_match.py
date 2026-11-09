@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from fastapi import HTTPException
 
 from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
@@ -11,7 +12,7 @@ from app.engine.executor import BehaviorExecutor
 from app.engine.state import MatchState, Side
 from app.security.tokens import create_access_token
 from app.ws.match.info import ClubSummary, MatchInfo
-from app.ws.match.runner import LiveMatch, live_matches
+from app.ws.match.runner import LiveMatch, live_matches, match_connections, Phase
 from tests.engine.conftest import make_player
 from tests.ws.match.conftest import lineup_player
 
@@ -86,63 +87,190 @@ def body(club, player_in=ON_BENCH) -> dict:
 
 
 async def test_post_schedules_the_substitution(client, club, live):
-    r = await client.post(
+    result = await client.post(
         url(live.match_id), json=body(club), headers=auth_header(club)
     )
 
-    assert r.status_code == 201
-    assert r.json()["status"] == "pending"
-    assert r.json()["window"] == "cooling_break_1"
+    assert result.status_code == 201
+    assert result.json()["status"] == "pending"
+    assert result.json()["window"] == "cooling_break_1"
     assert str(club[0].id) in live.pending_substitutions
 
 
 async def test_post_400_if_the_player_in_is_not_on_the_bench(client, club, live):
-    r = await client.post(
+    result = await client.post(
         url(live.match_id),
         json=body(club, player_in=ON_FIELD),
         headers=auth_header(club),
     )
 
-    assert r.status_code == 400
+    assert result.status_code == 400
     assert live.pending_substitutions == {}
 
 
 async def test_post_403_if_the_club_does_not_play_the_match(client, club, live):
     live.info.home_club.id = str(uuid.uuid4())
 
-    r = await client.post(
+    result = await client.post(
         url(live.match_id), json=body(club), headers=auth_header(club)
     )
 
-    assert r.status_code == 403
+    assert result.status_code == 403
 
 
 async def test_post_404_if_the_match_is_not_being_played(client, club):
-    r = await client.post(url(uuid.uuid4()), json=body(club), headers=auth_header(club))
+    result = await client.post(url(uuid.uuid4()), json=body(club), headers=auth_header(club))
 
-    assert r.status_code == 404
+    assert result.status_code == 404
 
 
 async def test_post_409_if_there_is_already_one_pending(client, club, live):
     await client.post(url(live.match_id), json=body(club), headers=auth_header(club))
 
-    r = await client.post(
+    result = await client.post(
         url(live.match_id), json=body(club), headers=auth_header(club)
     )
 
-    assert r.status_code == 409
+    assert result.status_code == 409
 
 
 async def test_delete_cancels_the_pending_substitution(client, club, live):
     await client.post(url(live.match_id), json=body(club), headers=auth_header(club))
 
-    r = await client.delete(url(live.match_id), headers=auth_header(club))
+    result = await client.delete(url(live.match_id), headers=auth_header(club))
 
-    assert r.status_code == 200
+    assert result.status_code == 200
     assert live.pending_substitutions == {}
 
 
 async def test_delete_404_if_there_is_no_pending_one(client, club, live):
-    r = await client.delete(url(live.match_id), headers=auth_header(club))
+    result = await client.delete(url(live.match_id), headers=auth_header(club))
 
-    assert r.status_code == 404
+    assert result.status_code == 404
+
+def behavior_url(match_id, player_id) -> str:
+    return f"/matches/{match_id}/players/{player_id}"  #para no escribir la url a mano en todos lso tests
+
+
+@pytest.fixture
+def sent(monkeypatch):   #sirve para ver que mensakes manda el endpoint por websocket sin abir un ws real.
+    messages = []
+
+    async def fake_broadcast(channel_id, message): #en vez de mandar el msj a los clientes, lo manda a la lista vacia mesasges.
+        messages.append((channel_id, message))
+
+    monkeypatch.setattr(match_connections, "broadcast", fake_broadcast) #reemplazo el metodo.
+    return messages
+
+
+@pytest.fixture
+def behavior_calls(live, monkeypatch):
+    """Registra las llamadas a executor.set_behavior sin mandar nada al proceso hijo.
+    Que el executor aplique bien el cambio ya se testea en tests/engine/test_executor.py."""
+    calls = []
+
+    def fake_set_behavior(player_id, code):
+        calls.append((player_id, code))
+
+    monkeypatch.setattr(live.executor, "set_behavior", fake_set_behavior)
+    return calls
+
+
+async def test_changes_live_behavior(client, club, live, sent, behavior_calls):
+    #club crea una tupla (club, behavior)
+    #client para simular las consultas quue hace el front
+    #live arma un partido en vivo y lo registra el live_matches
+    #behavior_calls guarda con que (player_id, code) se llamo a executor.set_behavior
+
+    behavior = club[1]
+
+    result = await client.patch(
+        behavior_url(live.match_id, ON_FIELD), 
+        json={"behavior_id": str(behavior.id)},
+        headers=auth_header(club),
+    )  # LO que pide el router (de la URL se extrae el match_id y el player_id, del body el ChangeLiveBehaviorRequest y del header(token) el club)
+
+    assert result.status_code == 200
+    assert behavior_calls == [(ON_FIELD, behavior.code)] #chequeo que se le pidio al executor cargar el comportamiento
+
+    player = next(p for p in live.info.home_lineup if p.player_id == ON_FIELD)
+    assert player.behavior_id == str(behavior.id) #veo que se actualizo la info
+    assert player.behavior_name == behavior.name
+
+    assert len(sent) == 1 #veo que se mando el mensaje
+    channel_id, message = sent[0]
+    assert channel_id == live.match_id #veo que se haya mandado bien
+    assert message["type"] == "behaviorChanged"
+    assert message["data"] == {
+        "match_id": str(live.match_id),
+        "tick": live.state.tick,
+        "player_id": ON_FIELD,
+        "behavior_id": str(behavior.id),
+        "behavior_name": behavior.name,
+    }
+
+async def test_changes_live_behavior_match_penalties(client, club, live, sent):
+    live.phase = Phase.PENALTIES
+
+    behavior = club[1]
+
+    result = await client.patch(
+        behavior_url(live.match_id, ON_FIELD),
+        json={"behavior_id": str(behavior.id)},
+        headers=auth_header(club),
+    )
+    assert len(sent) == 0 #chuqeo q no se mande nada
+    assert result.status_code == 409
+    assert result.json()["message"] == "El partido se encuentra en penales"  #LA excepcion la agarra FastApi y la convierte a un mensaje HTTP
+
+async def test_change_live_behavior_match_no_init(client, club, sent):
+    behavior = club [1]
+
+    result = await client.patch(
+        behavior_url(uuid.uuid4(), ON_FIELD),
+        json={"behavior_id": str(behavior.id)},
+        headers=auth_header(club),
+    )
+
+    assert len(sent) == 0 #chuqeo q no se mande nada
+    assert result.status_code == 404
+    assert result.json()["message"] == "El partido no está en juego"
+
+async def test_changes_live_behavior_club_not_match(client, club, live, sent):
+    live.info.home_club.id = str(uuid.uuid4())
+    behavior = club[1]
+
+    result = await client.patch(
+        behavior_url(live.match_id, ON_FIELD),
+        json={"behavior_id": str(behavior.id)},
+        headers=auth_header(club),
+    )
+    assert len(sent) == 0 #chuqeo q no se mande nada
+    assert result.status_code == 403
+    assert result.json()["message"] == "El club no juega este partido"
+
+async def test_changes_live_behavior_behavior_not_exist(client, club, live, sent):
+
+    result = await client.patch(
+        behavior_url(live.match_id, ON_FIELD),
+        json={"behavior_id": str(uuid.uuid4())},
+        headers=auth_header(club),
+    )
+    assert len(sent) == 0 #chuqeo q no se mande nada
+    assert result.status_code == 400
+    assert result.json()["message"] == "El comportamiento no existe"
+
+async def test_change_live_behavior_player_not_field(client, club, live, sent, behavior_calls):
+    behavior = club[1]
+
+    result = await client.patch(
+        behavior_url(live.match_id, ON_BENCH),
+        json={"behavior_id": str(behavior.id)},
+        headers=auth_header(club),
+    )
+
+    assert len(sent) == 0  # chequeo que no se mande nada
+    assert behavior_calls == []  # no se le aplicó el comportamiento
+    assert result.status_code == 404
+    assert (result.json()["message"] == "El jugador no se encuentra en cancha del lado del club"
+)
