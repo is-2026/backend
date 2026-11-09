@@ -1,7 +1,7 @@
 """ING-139 agregar columna formation en league_enrollments
 
 Revision ID: 3ee6cab1e534
-Revises: 1d3cfadd9fd6
+Revises: c3a468cbda9d
 Create Date: 2026-11-09 18:17:18.583958
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '3ee6cab1e534'
-down_revision: Union[str, Sequence[str], None] = '1d3cfadd9fd6'
+down_revision: Union[str, Sequence[str], None] = 'c3a468cbda9d'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
