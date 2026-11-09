@@ -1,3 +1,4 @@
+import asyncio
 import functools
 import uuid
 
@@ -178,9 +179,7 @@ async def league_match(session):
         session.add(
             LeagueEnrollmentDB(id=enrollment_id, league_id=league_id, club_id=club)
         )
-        session.add(
-            LeagueStandingsDB(league_id=league_id, club_id=club, rank=rank)
-        )
+        session.add(LeagueStandingsDB(league_id=league_id, club_id=club, rank=rank))
         await session.flush()
         session.add_all(
             LeagueEnrollmentPlayerDB(
@@ -248,3 +247,23 @@ async def test_league_match_uses_league_duration_and_updates_standings(
         live.state.away_score,
         live.state.home_score,
     )
+
+
+async def test_league_match_without_draws_passes_it_to_runner(
+    session_factory, league_match, monkeypatch
+):
+    league_id, match_id, _, _ = league_match
+    async with session_factory() as s:
+        league = await s.get(LeagueDB, league_id)
+        league.allows_draws = False
+        await s.commit()
+    monkeypatch.setattr(
+        starter_module, "start_match", functools.partial(start_match, start_delay=60)
+    )
+
+    save_task = await MatchStarter(session_factory).start(match_id)
+    live = live_matches[match_id]
+
+    assert live.allows_draws is False
+    live.task.cancel()
+    await asyncio.gather(live.task, save_task, return_exceptions=True)
