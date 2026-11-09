@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -267,3 +268,18 @@ async def test_league_match_without_draws_passes_it_to_runner(
     assert live.allows_draws is False
     live.task.cancel()
     await asyncio.gather(live.task, save_task, return_exceptions=True)
+
+
+async def test_saves_penalties_when_there_was_a_shootout(session_factory, match_id):
+    live = SimpleNamespace(
+        match_id=match_id,
+        task=asyncio.create_task(asyncio.sleep(0)),  # el runner ya terminó
+        state=SimpleNamespace(home_score=1, away_score=1),
+        shootout=SimpleNamespace(home_penalties=4, away_penalties=3),
+    )
+
+    await MatchStarter(session_factory)._save_result(live)
+
+    match = await get_match(session_factory, match_id)
+    assert match.status == MatchStatus.finished
+    assert (match.home_penalties, match.away_penalties) == (4, 3)

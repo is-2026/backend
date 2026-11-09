@@ -230,6 +230,10 @@ async def test_tied_match_without_draws_goes_to_penalties(live, client):
     assert [r["number"] for r in results] == list(range(1, 21))
     assert not any(r["scored"] for r in results)
     assert live.shootout.finished
+    finished = client.sent[-1]["data"]
+    assert (finished["home_penalties"], finished["away_penalties"]) == (0, 0)
+    # 0 a 0 en los 20 el ganador sale del sorteo
+    assert finished["winner_club_id"] in ("club-local", "club-visitante")
 
 
 async def test_penalties_alternate_with_default_order(live, client):
