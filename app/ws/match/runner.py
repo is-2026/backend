@@ -68,6 +68,8 @@ class LiveMatch:
     allows_draws: bool = True
     # la tanda, si es que hubo
     shootout: Shootout | None = None
+    # team_id -> pateadores elegidos con el PUT durante la ventana
+    penalty_orders: dict[str, list[PlayerState]] = field(default_factory=dict)
     # team_id -> la sustitucion pedida por un club
     pending_substitutions: dict[str, PendingSubstitution] = field(default_factory=dict)
     # cuantas pausas empezaron
@@ -192,6 +194,12 @@ def default_kickers(live: LiveMatch, side: Side) -> list[PlayerState]:
     return [on_field[i % len(on_field)] for i in range(PENALTIES_PER_TEAM)]
 
 
+def _kickers(live: LiveMatch, side: Side) -> list[PlayerState]:
+    """Los que eligió el club en la ventana, o los de por defecto si no eligió."""
+    team_id = live.info.home_club.id if side == Side.HOME else live.info.away_club.id
+    return live.penalty_orders.get(team_id) or default_kickers(live, side)
+
+
 async def _penalty_kick(
     live: LiveMatch, number: int, rng: random.Random, tick_interval: float
 ) -> None:
@@ -245,9 +253,7 @@ async def _penalties(
 
     await asyncio.sleep(penalty_window)
 
-    live.shootout = Shootout(
-        default_kickers(live, Side.HOME), default_kickers(live, Side.AWAY), rng
-    )
+    live.shootout = Shootout(_kickers(live, Side.HOME), _kickers(live, Side.AWAY), rng)
     number = 0
     while not live.shootout.finished:
         number += 1
