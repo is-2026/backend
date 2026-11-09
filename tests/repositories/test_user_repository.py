@@ -59,3 +59,14 @@ async def test_get_by_email_return_none(session):
     # este email podria existir en la bd -> en ese caso fallaria
     result = await consult_repo.get_by_email("wrong@email.com")
     assert result is None
+
+async def test_get_by_id_returns_user(session):
+    user = await UserRepository(session).create("ana@test.com", "hash")
+
+    found = await UserRepository(session).get_by_id(user.id)
+
+    assert found.email == "ana@test.com"
+
+
+async def test_get_by_id_not_found_returns_none(session):
+    assert await UserRepository(session).get_by_id(uuid.uuid4()) is None
