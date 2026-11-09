@@ -299,10 +299,13 @@ async def list_league_matches(
     league_id: UUID = Path(..., description=""),
     status: Optional[str] = Query(None, description="", alias="status"),
     token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
+    session: AsyncSession = Depends(get_session),
 ) -> List[Match]:
     if not BaseLeaguesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseLeaguesApi.subclasses[0]().list_league_matches(league_id, status)
+    return await BaseLeaguesApi.subclasses[0](session).list_league_matches(
+        league_id, status
+    )
 
 
 @router.get(
