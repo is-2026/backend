@@ -165,7 +165,7 @@ class MatchStarter:
                     live.state.home_score,
                     live.state.away_score,
                     live.shootout.home_penalties if live.shootout else None,
-                    live.shootout.home_penalties if live.shootout else None,
+                    live.shootout.away_penalties if live.shootout else None,
                 )
 
                 # es partido de liga
