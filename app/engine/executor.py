@@ -162,6 +162,11 @@ class BehaviorExecutor:
         if player is None:
             logger.warning("No existe el jugador %s", player_id)
             return
+        self.set_player_behavior(player, code)
+
+    def set_player_behavior(self, player: PlayerState, code: str) -> None:
+        """Como set_behavior, pero sirve para un jugador que no está en cancha
+        (por ejemplo, un suplente que patea en la tanda de penales)."""
         self._workers[player.side].set_behavior(player, code)
 
     def close(self) -> None:

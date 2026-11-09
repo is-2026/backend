@@ -23,6 +23,7 @@ SPEED_MAX_RANGE = (4.0, 8.0)  # m/s
 CONTROL_RADIUS_RANGE = (0.5, 1.5)  # m
 KICK_SPEED_RANGE = (10.0, 25.0)  # m/s, pelota al 100% de power
 COOLDOWN_TICKS_RANGE = (10, 3)  # ticks, más agility = menos cooldown
+SHOT_SPREAD_RANGE = (20.0, 5.0)  # grados para cada lado, más control = menos desvío
 
 # Pelota
 BALL_FRICTION = 0.95  # factor por tick
@@ -31,9 +32,6 @@ BALL_STOP_SPEED = 0.1  # m/s, por debajo se considera quieta
 
 # Posiciones iniciales del local (formación TRIANGLE) el visitante las espeja
 TRIANGLE_HOME = ((-4.0, 0.0), (-12.0, -5.0), (-12.0, 5.0))
-
-# Cada remate se desvía al azar hasta este ángulo para cada lado
-SHOT_SPREAD_DEG = 25.0
 
 # Distancia de separación mínima entre jugadores (no es colisión, es más un forcefield)
 SOCIAL_DISTANCING = 1.0
@@ -50,11 +48,15 @@ PENALTIES_PER_TEAM = 5
 MAX_PENALTIES = 20
 
 KICKER_FORMATION = ((-0.5, 0.0), (-0.5, 0.0), (-0.5, 0.0))
-GOALIE_FORMATION = (
-    (-FIELD_HALF_LENGTH, 0.0),
-    (-FIELD_HALF_LENGTH, 0.0),
-    (-FIELD_HALF_LENGTH, 0.0),
-)
+# el arquero arranca 2 m adelante de su arco: en la línea no se ve bien
+GOALIE_LINE_X = -18.0
+GOALIE_FORMATION = ((GOALIE_LINE_X, 0.0),) * 3
+# el arquero corrige hacia la pelota cuando la tiene a esta distancia (m),
+# más lento que la estirada, así si eligió mal el palo no siempre llega
+GOALIE_REACTION_DISTANCE = 3.0
+GOALIE_CORRECTION_SPEED_PCT = 40
+# más cerca que esto de donde quiere ir no se mueve: si no, se pasa y vuelve (tiembla)
+GOALIE_STOP_DISTANCE = 0.5
 
 # Para la sandbox
 # Cuánto tiempo le doy a cada decide_action().

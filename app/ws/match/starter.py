@@ -42,7 +42,7 @@ def _player_state(member: SquadMember, side: Side) -> PlayerState:
 def build_match_state(
     match: MatchDB,
     squad: list[SquadMember],
-    total_ticks: int = FRIENDLY_TOTAL_TICKS,    #por defecto: duracion de un friendly
+    total_ticks: int = FRIENDLY_TOTAL_TICKS,  # por defecto: duracion de un friendly
 ) -> tuple[MatchState, dict[str, str]]:
     """Arma el estado inicial del motor y codes = player_id -> código.
     Solo entran los titulares; su orden en `squad` decide la posición en la formación."""
@@ -145,15 +145,17 @@ class MatchStarter:
             home_club = await clubs.get_by_id(match.home_club_id)
             away_club = await clubs.get_by_id(match.away_club_id)
 
-            #es partido de liga
+            # es partido de liga
             if match.league_id is not None:
                 leagues = LeagueRepository(session)
                 league = await leagues.get(match.league_id)
                 squad = await leagues.get_squad_by_match(match_id)
                 total_ticks = league.match_duration_minutes * TICKS_PER_MINUTE
+                allows_draws = league.allows_draws
             else:
                 squad = await FriendlyRepository(session).get_squad_by_match(match_id)
                 total_ticks = FRIENDLY_TOTAL_TICKS
+                allows_draws = True  # los amistosos admiten empate
 
             state, codes = build_match_state(match, squad, total_ticks=total_ticks)
             info = build_match_info(home_club, away_club, squad)
@@ -169,7 +171,14 @@ class MatchStarter:
                 if setup is not None:
                     coaches[str(club.id)] = setup
 
-            live = start_match(match_id, state, codes, info, coaches=coaches)
+            live = start_match(
+                match_id,
+                state,
+                codes,
+                info,
+                allows_draws=allows_draws,
+                coaches=coaches,
+            )
             await MatchRepository(session).set_status(match_id, MatchStatus.in_progress)
 
         task = asyncio.create_task(
@@ -182,7 +191,7 @@ class MatchStarter:
         )
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
-        #para una liga, se pueden esperar todas las tasks (matchs) antes de iniciar otra fecha
+        # para una liga, se pueden esperar todas las tasks (matchs) antes de iniciar otra fecha
         return task
 
     async def _save_result(
@@ -198,17 +207,29 @@ class MatchStarter:
         try:
             async with self._session_factory() as session:
                 await MatchRepository(session).finish(
-                    live.match_id, live.state.home_score, live.state.away_score
+                    live.match_id,
+                    live.state.home_score,
+                    live.state.away_score,
+                    live.shootout.home_penalties if live.shootout else None,
+                    live.shootout.away_penalties if live.shootout else None,
                 )
 
-                #es partido de liga
+                # es partido de liga
                 if league_id is not None:
+                    penalty_winner_id = None
+                    if live.shootout is not None:
+                        penalty_winner_id = (
+                            home_club_id
+                            if live.shootout.winner == Side.HOME
+                            else away_club_id
+                        )
                     await LeagueRepository(session).update_standings(
                         league_id,
                         home_club_id,
                         away_club_id,
                         live.state.home_score,
                         live.state.away_score,
+                        penalty_winner_id,
                     )
         except Exception:
             logger.exception("No se pudo guardar el resultado de %s", live.match_id)

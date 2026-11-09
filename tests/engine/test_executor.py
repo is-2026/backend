@@ -1,6 +1,7 @@
 import logging
 import multiprocessing
 import time
+from dataclasses import replace
 from textwrap import dedent
 
 import pytest
@@ -10,7 +11,7 @@ from app.engine.behavior_exec import create_brains, decide_actions
 from app.engine.constants import STARTUP_DEADLINE, TICK_DEADLINE
 from app.engine.executor import BehaviorExecutor
 from app.engine.state import Side
-from tests.engine.conftest import same_code_for_all
+from tests.engine.conftest import make_player, same_code_for_all
 
 CHASE_BALL = """
     def decide_action():
@@ -146,3 +147,13 @@ async def test_hang_freezes_only_its_team(state, make_executor):
     assert not executor._workers[Side.HOME]._proc.is_alive()
     assert executor._workers[Side.AWAY]._proc.is_alive()
     assert await executor.decide(state) == {"a1": away_right}  # los visitantes siguen
+
+
+async def test_set_player_behavior_loads_a_player_not_on_the_field(state, make_executor):
+    executor = make_executor(state, {})
+    bench = make_player("h9", Side.HOME)
+
+    executor.set_player_behavior(bench, dedent(GO_RIGHT))
+
+    with_bench = replace(state, players=[*state.players, bench])
+    assert await executor.decide(with_bench) == {"h9": Move(1.0, 0.0, 100.0)}

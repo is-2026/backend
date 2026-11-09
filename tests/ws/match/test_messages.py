@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
 from app.engine.events import GoalEvent
+from app.engine.state import Side
 from app.ws.match.messages import (
+    behavior_changed_message,
     goal_message,
     match_finished_message,
     match_resumed_message,
@@ -11,7 +14,6 @@ from app.ws.match.messages import (
     match_state_message,
     pause_start_message,
     substitution_made_message,
-    behavior_changed_message
 )
 from app.ws.match.pauses import Pause
 from app.ws.match.substitutions import PendingSubstitution
@@ -108,9 +110,14 @@ def test_match_finished_serialzes_to_json_as_intended(match_state):
         "match_end",
         "home_score",
         "away_score",
+        "home_penalties",
+        "away_penalties",
+        "winner_club_id",
         "status",
     }
     assert payload["data"]["status"] == "finished"
+    assert payload["data"]["home_penalties"] is None
+    assert payload["data"]["away_penalties"] is None
 
 
 def test_match_started_serializes_to_json_as_intended(match_state, match_info):
@@ -229,6 +236,7 @@ def test_substitution_made_has_the_players_and_the_behavior(match_state):
     assert data.behavior_id == "b-1"
     assert data.behavior_name == "Atacante"
 
+
 def test_behavior_changed_serializes_as_asyncapi(match_state):
     match_state.tick = 912
 
@@ -246,3 +254,26 @@ def test_behavior_changed_serializes_as_asyncapi(match_state):
             "behavior_name": "Defensor",
         },
     }
+
+
+@pytest.mark.parametrize(
+    "home_score, away_score, winner",
+    [(2, 1, "club-local"), (1, 2, "club-visitante"), (1, 1, None)],
+)
+def test_match_finished_winner_by_goals(match_state, home_score, away_score, winner):
+    match_state.home_score, match_state.away_score = home_score, away_score
+
+    msg = match_finished_message(MATCH_ID, match_state)
+
+    assert msg.data.winner_club_id == winner
+
+
+def test_match_finished_after_penalties(match_state):
+    match_state.home_score = match_state.away_score = 1
+    shootout = SimpleNamespace(home_penalties=3, away_penalties=4, winner=Side.AWAY)
+
+    msg = match_finished_message(MATCH_ID, match_state, shootout)
+
+    assert (msg.data.home_score, msg.data.away_score) == (1, 1)
+    assert (msg.data.home_penalties, msg.data.away_penalties) == (3, 4)
+    assert msg.data.winner_club_id == "club-visitante"

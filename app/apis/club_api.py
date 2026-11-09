@@ -51,20 +51,20 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
     responses={
         200: {"model": Club, "description": "Datos del club propio"},
         401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
+        404: {"model": Error, "description": "El usuario todavia no creo su club"},
     },
     tags=["Club"],
     summary="Obtener mi club",
     response_model_by_alias=True,
 )
 async def get_my_club(
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
 ) -> Club:
     """Identifica al club mediante el token de sesión."""
     if not BaseClubApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseClubApi.subclasses[0]().get_my_club()
+    return await BaseClubApi.subclasses[0](session).get_my_club(club.id)
 
 
 @router.post(
