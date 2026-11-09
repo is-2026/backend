@@ -33,6 +33,23 @@ from app.models.penalty_order_input import PenaltyOrderInput
 from app.ws.match.penalty_order import InvalidPenaltyOrder, build_penalty_order
 
 
+def _to_match(match_db: MatchDB) -> Match:
+    return Match(
+        id=match_db.id,
+        league_id=match_db.league_id,
+        round_number=match_db.round_number,
+        home_club_id=match_db.home_club_id,
+        home_club_name=match_db.home_club.club_name if match_db.home_club else None,
+        away_club_id=match_db.away_club_id,
+        away_club_name=match_db.away_club.club_name if match_db.away_club else None,
+        status=match_db.status.value,
+        home_score=match_db.home_score,
+        away_score=match_db.away_score,
+        home_penalties=match_db.home_penalties,
+        away_penalties=match_db.away_penalties,
+    )
+
+
 class MatchApiImpl(BaseMatchApi):
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -43,16 +60,7 @@ class MatchApiImpl(BaseMatchApi):
         if not match_db:
             raise HTTPException(status_code=404, detail="El partido no existe")
         # mapeamos al modelo pydantic
-        return Match(
-            id=str(match_db.id),
-            home_club_id=str(match_db.home_club_id),
-            away_club_id=str(match_db.away_club_id),
-            status=match_db.status.value,
-            home_score=match_db.home_score,
-            away_score=match_db.away_score,
-            home_penalties=match_db.home_penalties,
-            away_penalties=match_db.away_penalties,
-        )
+        return _to_match(match_db)
 
     async def set_lineup(self, match_id, submit_lineup_input) -> Match:
         raise NotImplementedError
@@ -99,7 +107,7 @@ class MatchApiImpl(BaseMatchApi):
         message = behavior_changed_message(str(match_id), live.state, player ,str(behavior.id), behavior.name ) #armo el mensaje
         await match_connections.broadcast(live.match_id, message.model_dump(mode = "json")) #mando el mensaje a todos los clientes conectados al canal
         #convierto el modelo en un dict para poder dsp pasarlo a json, porque broadcast recibe un dict no un modelo.
-    
+
     async def schedule_substitution(
         self, match_id, schedule_substitution_input, club_id
     ) -> Substitution:
