@@ -5,11 +5,13 @@ from fastapi import HTTPException, status
 from app.apis.leagues_api_base import BaseLeaguesApi
 from app.impl.friendlies_api_impl import _validate_squad
 from app.db.club import ClubDB
+from app.db.match import MatchStatus
 from app.db.session import SessionLocal
 from app.models.join_league_input import JoinLeagueInput
 from app.models.create_league_input import CreateLeagueInput
 from app.models.league_detail import LeagueDetail
 from app.models.league_summary import LeagueSummary
+from app.models.match import Match
 from app.repositories.league_repository import (
     LeagueRepository,
     SquadPlayerData,
@@ -17,6 +19,7 @@ from app.repositories.league_repository import (
     ClubNotEnrolled,
     LeagueStartFailure,
 )
+from app.repositories.match_repository import MatchRepository
 from app.repositories.player_repository import PlayerRepository
 from app.db.behavior import BehaviorDB
 from app.security.passwords import hash_password, verify_password
@@ -238,7 +241,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
         # tras la inscripcion del club, armo el evento ClubRegistered y lo transmito por el lobby de la liga
         event_club_registered = {
             "type": "ClubRegistered",
-            "payload": {
+            "data": {
                 "league_id": str(league_id),
                 "club_id": str(club.id),
                 "club_name": club.club_name,
@@ -282,7 +285,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
         # tras el abandono de liga, armamos y emitimos el evento ClubLeft
         event_club_left = {
             "type": "ClubLeft",
-            "payload": {
+            "data": {
                 "league_id": str(league_id),
                 "club_id": str(club.id),
                 "registered_count": len(enrolled_clubs),
@@ -334,11 +337,11 @@ class LeaguesApiImpl(BaseLeaguesApi):
             )  # internal server error <-- REVISAR
 
         # emitir evento ws LeagueStarted
-        event_payload = {
+        event_league_started = {
             "type": "LeagueStarted",
-            "payload": {"league_id": str(league_id)},
+            "data": {"league_id": str(league_id)},
         }
-        await league_lobby_connection.broadcast(league_id, event_payload)
+        await league_lobby_connection.broadcast(league_id, event_league_started)
         # llama al schedule de la liga para iniciar los partidos
         if self._league_scheduler is not None:
             self._league_scheduler.schedule(league_id)
@@ -356,3 +359,44 @@ class LeaguesApiImpl(BaseLeaguesApi):
             status="started",  # ya sabemos que arranco
             registered_clubs=registered,
         )
+
+    async def list_league_matches(
+        self,
+        league_id: uuid.UUID,
+        status: str | None = None,
+    ) -> list[Match]:
+        league = await LeagueRepository(self._session).get(league_id)
+        if not league:
+            raise HTTPException(status_code=404, detail="La liga indicada no existe")
+        if league.status in ("not_started", "cancelled"):
+            raise HTTPException(
+                status_code=409, detail="La liga aún no fue iniciada"
+            )
+
+        match_status: MatchStatus | None = None
+        if status is not None:
+            try:
+                match_status = MatchStatus(status)
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=400, detail="Estado de partido inválido"
+                ) from e
+
+        matches = await MatchRepository(self._session).list_by_league(
+            league_id, status=match_status
+        )
+        return [
+            Match(
+                id=m.id,
+                league_id=m.league_id,
+                round_number=m.round_number,
+                home_club_id=m.home_club_id,
+                home_club_name=m.home_club.club_name if m.home_club else None,  #aca usamos el home_club que trajimos a memoria en el repo
+                away_club_id=m.away_club_id,
+                away_club_name=m.away_club.club_name if m.away_club else None,  #aca usamos el away_club que trajimos a memoria en el repo
+                status=m.status.value,
+                home_score=m.home_score,
+                away_score=m.away_score,
+            )
+            for m in matches
+        ]
