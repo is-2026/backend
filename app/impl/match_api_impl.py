@@ -49,8 +49,6 @@ class MatchApiImpl(BaseMatchApi):
             away_score=match_db.away_score,
         )
 
-    async def set_lineup(self, match_id, submit_lineup_input) -> Match:
-        raise NotImplementedError
 
     async def change_live_behavior(
         self,
