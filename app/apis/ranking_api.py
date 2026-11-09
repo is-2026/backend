@@ -53,7 +53,7 @@ async def get_ranking(
         get_token_bearerAuth
     ), session: AsyncSession = Depends(get_session)
 ) -> List[RankingItem]:
-    """Calculado a partir de los partidos jugados en instancias públicas (ligas públicas y amistosos)."""
+    """Calculado a partir de los partidos jugados en ligas públicas en curso o terminadas."""
     if not BaseRankingApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
     return await BaseRankingApi.subclasses[0](session).get_ranking()
