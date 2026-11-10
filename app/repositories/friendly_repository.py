@@ -41,8 +41,17 @@ class FriendlyRepository:
         # true si hay una contraseña guardada, false si es None
         return bool(friendly.hashed_password)
 
-    async def list_available_friendlies(self) -> list[FriendlyDB]:
+    async def list_available_friendlies(
+        self, club_name: str | None = None
+    ) -> list[FriendlyDB]:
         consult = select(FriendlyDB).where(FriendlyDB.status == "waiting_for_rival")
+        # si llego un club_name, lo usamos para buscar (join con clubs)
+        # ojo: ILIKE de SQL hace pattern matching con la palabra completa (case insensitive).
+        # si club_name="boca", "boca unidos" matchea, "bocado club" no.
+        if club_name is not None:
+            consult = consult.join(
+                ClubDB, FriendlyDB.creator_club_id == ClubDB.id
+            ).where(ClubDB.club_name.ilike(f"%{club_name}%"))
         result = await self._session.execute(consult)
         return list(result.scalars().all())
 

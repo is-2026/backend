@@ -48,9 +48,9 @@ class FriendliesApiImpl(BaseFriendliesApi):
         self._window = window_seconds
 
 
-    async def list_friendlies(self) -> list[Friendly]:
+    async def list_friendlies(self, club_name: str | None = None) -> list[Friendly]:
         repo = FriendlyRepository(self._session)
-        friendlies = await repo.list_available_friendlies()
+        friendlies = await repo.list_available_friendlies(club_name=club_name)
         if not friendlies:
             return []
         names = await repo.get_club_names([f.creator_club_id for f in friendlies])
