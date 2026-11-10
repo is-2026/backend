@@ -46,8 +46,8 @@ class LeagueSummary(BaseModel):
         if value is None:
             return value
 
-        if value not in ('not_started', 'started', 'finished',):
-            raise ValueError("must be one of enum values ('not_started', 'started', 'finished')")
+        if value not in ('not_started', 'started', 'finished', 'cancelled',):
+            raise ValueError("must be one of enum values ('not_started', 'started', 'finished', 'cancelled')")
         return value
 
     model_config = {

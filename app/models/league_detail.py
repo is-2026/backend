@@ -38,17 +38,21 @@ class LeagueDetail(BaseModel):
     is_private: Optional[StrictBool] = Field(default=None, description="derivado de si la liga tiene password")
     max_clubs: Optional[StrictInt] = None
     status: Optional[StrictStr] = None
+    creator_club_id: Optional[UUID] = None
+    match_duration_minutes: Optional[StrictInt] = None
+    allows_draws: Optional[StrictBool] = None
+    current_round: Optional[StrictInt] = Field(default=None, description="Fecha en juego, null si la liga no está iniciada.")
     registered_clubs: Optional[List[LeagueDetailRegisteredClubsInner]] = Field(default=None, description="Clubes actualmente inscriptos en la liga.")
-    __properties: ClassVar[List[str]] = ["id", "name", "is_private", "max_clubs", "status", "registered_clubs"]
-
+    __properties: ClassVar[List[str]] = ["id", "name", "is_private", "max_clubs", "status", "creator_club_id", "match_duration_minutes", "allows_draws", "current_round", "registered_clubs"]
+    
     @field_validator('status')
     def status_validate_enum(cls, value):
         """Validates the enum"""
         if value is None:
             return value
 
-        if value not in ('not_started', 'started', 'finished',):
-            raise ValueError("must be one of enum values ('not_started', 'started', 'finished')")
+        if value not in ('not_started', 'started', 'finished', 'cancelled',):
+            raise ValueError("must be one of enum values ('not_started', 'started', 'finished', 'cancelled')")
         return value
 
     model_config = {
@@ -112,6 +116,10 @@ class LeagueDetail(BaseModel):
             "is_private": obj.get("is_private"),
             "max_clubs": obj.get("max_clubs"),
             "status": obj.get("status"),
+            "creator_club_id": obj.get("creator_club_id"),
+            "match_duration_minutes": obj.get("match_duration_minutes"),
+            "allows_draws": obj.get("allows_draws"),
+            "current_round": obj.get("current_round"),
             "registered_clubs": [LeagueDetailRegisteredClubsInner.from_dict(_item) for _item in obj.get("registered_clubs")] if obj.get("registered_clubs") is not None else None
         })
         return _obj

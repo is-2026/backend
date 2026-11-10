@@ -28,7 +28,8 @@ def crear_base_de_test():
         password=os.environ["MYSQL_ROOT_PASSWORD"],
     )
     with conn.cursor() as cur:
-        cur.execute(f"CREATE DATABASE IF NOT EXISTS {TEST_DATABASE}")
+        cur.execute(f"DROP DATABASE IF EXISTS {TEST_DATABASE}")
+        cur.execute(f"CREATE DATABASE {TEST_DATABASE}")
         cur.execute(f"GRANT ALL ON {TEST_DATABASE}.* TO %s@'%%'", (url.username,))
     conn.close()
 

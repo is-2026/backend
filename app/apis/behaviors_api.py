@@ -25,9 +25,10 @@ from fastapi import (  # noqa: F401
 from typing import Any, List
 from uuid import UUID
 from app.models.behavior import Behavior
-from app.models.create_behavior_input import CreateBehaviorInput
+from app.models.create_behavior_input import CreateBehaviorInput, UpdateBehaviorInput
 from app.models.error import Error
 from app.models.extra_models import TokenModel  # noqa: F401
+from app.models.behavior_test_input import BehaviorTestStarted, BehaviorTestInput
 from app.security_api import get_token_bearerAuth
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
@@ -62,6 +63,7 @@ async def list_behaviors(
 
 @router.post(
     "/club/behaviors",
+    status_code=status.HTTP_201_CREATED, #para que devuelva cuando la funcion anduvo bien
     responses={
         201: {"model": Behavior, "description": "Comportamiento creado"},
         400: {"model": Error, "description": "El código contiene errores de sintaxis o instrucciones prohibidas"},
@@ -74,14 +76,33 @@ async def list_behaviors(
 )
 async def create_behavior(
     create_behavior_input: CreateBehaviorInput = Body(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    club: ClubDB = Security(get_current_club), #get_current_club me valida el token
+    session: AsyncSession = Depends(get_session), 
 ) -> Behavior:
     if not BaseBehaviorsApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseBehaviorsApi.subclasses[0]().create_behavior(create_behavior_input)
+    return await BaseBehaviorsApi.subclasses[0](session).create_behavior(create_behavior_input, club.id)
 
+@router.post(
+    "/club/behaviors/test",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {"model": BehaviorTestStarted, "description": "Prueba iniciada: conectarse a /ws/matches/{match_id}"},
+        400: {"model": Error, "description": "El código contiene errores de sintaxis o instrucciones prohibidas"},
+        401: {"model": Error, "description": "No se proporcionó un token, o el token es inválido o expiró"},
+    },
+    tags=["Behaviors"],
+    summary="Probar comportamiento en una cancha 1 vs 1",
+    response_model_by_alias=True,
+)
+async def test_behavior(
+    behavior_test_input: BehaviorTestInput = Body(..., description=""),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
+) -> BehaviorTestStarted:
+    if not BaseBehaviorsApi.subclasses:
+        raise HTTPException(status_code=500, detail="Not implemented")
+    return await BaseBehaviorsApi.subclasses[0](session).test_behavior(behavior_test_input, club.id)
 
 @router.get(
     "/club/behaviors/{behavior_id}",
@@ -119,14 +140,13 @@ async def get_behavior(
 )
 async def update_behavior(
     behavior_id: UUID = Path(..., description=""),
-    create_behavior_input: CreateBehaviorInput = Body(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    update_behavior_input: UpdateBehaviorInput = Body(..., description=""),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
 ) -> Behavior:
     if not BaseBehaviorsApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseBehaviorsApi.subclasses[0]().update_behavior(behavior_id, create_behavior_input)
+    return await BaseBehaviorsApi.subclasses[0](session).update_behavior(behavior_id, update_behavior_input, club.id)
 
 
 @router.delete(
@@ -143,10 +163,9 @@ async def update_behavior(
 )
 async def delete_behavior(
     behavior_id: UUID = Path(..., description=""),
-    token_bearerAuth: TokenModel = Security(
-        get_token_bearerAuth
-    ),
+    club : ClubDB = Security(get_current_club),
+    session : AsyncSession = Depends(get_session)
 ) -> None:
     if not BaseBehaviorsApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseBehaviorsApi.subclasses[0]().delete_behavior(behavior_id)
+    return await BaseBehaviorsApi.subclasses[0](session).delete_behavior(behavior_id, club.id)

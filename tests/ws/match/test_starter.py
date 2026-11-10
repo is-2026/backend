@@ -6,11 +6,17 @@ from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
 from app.db.match import MatchDB
 from app.db.player import PlayerDB
-from app.engine.constants import FRIENDLY_TOTAL_TICKS
+from app.engine.constants import FORMATIONS, FRIENDLY_TOTAL_TICKS
 from app.engine.engine import kickoff
 from app.engine.state import Side
 from app.repositories.friendly_repository import SquadMember
-from app.ws.match.starter import InvalidLineup, build_match_info, build_match_state
+from app.ws.match.coach import ClubBehavior
+from app.ws.match.starter import (
+    InvalidLineup,
+    build_coach_setup,
+    build_match_info,
+    build_match_state,
+)
 
 
 def make_member(club_id, number, is_starter):
@@ -78,6 +84,28 @@ def test_order_decides_formation_position(match, squad):
     assert (first_away.x, first_away.y) == (4.0, 0.0)
 
 
+@pytest.mark.parametrize("formation", FORMATIONS)
+def test_starters_take_their_formation(match, squad, formation):
+    state, _ = build_match_state(
+        match, squad, home_formation=formation, away_formation=formation
+    )
+    kickoff(state)
+
+    home = [(p.x, p.y) for p in state.players if p.side == Side.HOME]
+    away = [(p.x, p.y) for p in state.players if p.side == Side.AWAY]
+    assert home == list(FORMATIONS[formation])
+    assert away == [(-x, -y) for x, y in FORMATIONS[formation]]  # espejado
+
+
+def test_each_club_can_have_its_own_formation(match, squad):
+    state, _ = build_match_state(
+        match, squad, home_formation="OFFENSIVE_LINE", away_formation="DEFENSIVE_LINE"
+    )
+
+    assert state.home_formation == FORMATIONS["OFFENSIVE_LINE"]
+    assert state.away_formation == FORMATIONS["DEFENSIVE_LINE"]
+
+
 def test_missing_starter_raises(match, squad):
     with pytest.raises(InvalidLineup):
         build_match_state(match, squad[1:])
@@ -103,3 +131,18 @@ def test_build_match_info(home_club, away_club, squad):
     assert starter.is_starter and starter.behavior_name == "B1"
     assert starter.behavior_id == str(squad[6].behavior.id)
     assert not sub.is_starter and sub.behavior_id is None
+
+
+# --- DT ---
+
+
+def test_build_coach_setup(home_club):
+    coach = BehaviorDB(id=uuid.uuid4(), name="DT", code="dt", kind="coach")
+    player = BehaviorDB(id=uuid.uuid4(), name="Ata", code="ata", kind="player")
+    home_club.coach_behavior_id = coach.id
+
+    setup = build_coach_setup(home_club, [coach, player])
+
+    assert setup.code == "dt"
+    # solo los de jugador
+    assert setup.behaviors == {str(player.id): ClubBehavior(name="Ata", code="ata")}

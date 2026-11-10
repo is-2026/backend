@@ -1,0 +1,208 @@
+import logging
+import multiprocessing
+import time
+from dataclasses import replace
+from textwrap import dedent
+
+import pytest
+
+from app.engine.actions import Move
+from app.engine.behavior_exec import CoachSnapshot, create_brains, decide_actions
+from app.engine.coach_orders import PenaltyOrder, SetBehavior
+from app.engine.constants import STARTUP_DEADLINE, TICK_DEADLINE
+from app.engine.executor import BehaviorExecutor
+from app.engine.state import Side
+from tests.engine.conftest import make_player, same_code_for_all
+
+CHASE_BALL = """
+    def decide_action():
+        x, y = my_pos()
+        bx, by = ball_pos()
+        move(bx - x, by - y, 100)
+"""
+
+GO_RIGHT = """
+    def decide_action():
+        move(1, 0, 100)
+"""
+
+HANG_FROM_2ND = """
+    calls = 0
+    def decide_action():
+        global calls
+        calls += 1
+        if calls >= 2:
+            sum(range(10**12))  # corre en C: la alarma del hijo no lo puede cortar
+        move(1, 0, 100)
+"""
+
+
+@pytest.fixture
+def make_executor():
+    """Hace executors, al final le hace close() a cada uno"""
+    started = []
+
+    def make(state, codes, coach_codes=None):
+        executor = BehaviorExecutor(state, codes, coach_codes)
+        started.append(executor)
+        return executor
+
+    yield make
+
+    for executor in started:
+        executor.close()
+
+
+async def test_decide_matches_decide_actions(state, make_executor):
+    codes = same_code_for_all(state, CHASE_BALL)
+    executor = make_executor(state, codes)
+
+    actions = await executor.decide(state)
+
+    assert actions == decide_actions(state, create_brains(state, codes))
+
+
+async def test_set_behavior_changes_only_that_player(state, make_executor):
+    executor = make_executor(state, same_code_for_all(state, CHASE_BALL))
+    before = await executor.decide(state)
+
+    executor.set_behavior("h1", dedent(GO_RIGHT))
+    after = await executor.decide(state)
+
+    assert after["h1"] == Move(1.0, 0.0, 100.0)
+    assert {k: v for k, v in after.items() if k != "h1"} == {
+        k: v for k, v in before.items() if k != "h1"
+    }
+
+
+async def test_set_behavior_with_invalid_code_keeps_the_old_one(state, make_executor):
+    executor = make_executor(state, {"h1": dedent(GO_RIGHT)})
+
+    executor.set_behavior("h1", "def decide_action(:\n")
+
+    assert await executor.decide(state) == {"h1": Move(1.0, 0.0, 100.0)}
+
+
+async def test_set_behavior_of_unknown_player_does_nothing(
+    state, caplog, make_executor
+):
+    executor = make_executor(state, {"h1": dedent(GO_RIGHT)})
+
+    with caplog.at_level(logging.WARNING):
+        executor.set_behavior("jugador inexistente", dedent(CHASE_BALL))
+
+    assert await executor.decide(state) == {"h1": Move(1.0, 0.0, 100.0)}
+    assert "No existe el jugador jugador inexistente" in caplog.text
+
+
+async def test_executor_close(state, make_executor):
+    executor = make_executor(state, {"h1": dedent(GO_RIGHT)})
+
+    await executor.decide(state)
+
+    executor.close()
+    executor.close()  # la segunda no tiene que tirar error
+
+    for worker in executor._workers.values():
+        assert worker._proc not in multiprocessing.active_children()
+    assert await executor.decide(state) == {}  # cerradoo
+
+
+async def test_child_process_hang(state, make_executor):
+    executor = make_executor(state, {"h1": dedent(HANG_FROM_2ND)})
+
+    assert await executor.decide(state) == {"h1": Move(1.0, 0.0, 100.0)}
+
+    start = time.monotonic()
+    assert await executor.decide(state) == {}
+    elapsed = time.monotonic() - start
+    assert TICK_DEADLINE <= elapsed < STARTUP_DEADLINE
+    assert not executor._workers[Side.HOME]._proc.is_alive()  # el padre lo mató
+
+    start = time.monotonic()
+    assert await executor.decide(state) == {}
+    elapsed = time.monotonic() - start
+    assert elapsed <= 0.05  # como ya se murio hace rato responde al toque
+
+
+async def test_dead_child_process(state, make_executor):
+    executor = make_executor(state, {"h1": dedent(GO_RIGHT)})
+    proc = executor._workers[Side.HOME]._proc
+
+    proc.kill()
+    proc.join()
+
+    assert await executor.decide(state) == {}
+    executor.set_behavior("h1", dedent(GO_RIGHT))
+
+
+async def test_hang_freezes_only_its_team(state, make_executor):
+    executor = make_executor(
+        state, {"h1": dedent(HANG_FROM_2ND), "a1": dedent(GO_RIGHT)}
+    )
+    home_right = Move(1.0, 0.0, 100.0)
+    away_right = Move(-1.0, 0.0, 100.0)  # se espeja
+
+    assert await executor.decide(state) == {"h1": home_right, "a1": away_right}
+    assert await executor.decide(state) == {"a1": away_right}  # h1 colgó a los locales
+    assert not executor._workers[Side.HOME]._proc.is_alive()
+    assert executor._workers[Side.AWAY]._proc.is_alive()
+    assert await executor.decide(state) == {"a1": away_right}  # los visitantes siguen
+
+
+async def test_set_player_behavior_loads_a_player_not_on_the_field(state, make_executor):
+    executor = make_executor(state, {})
+    bench = make_player("h9", Side.HOME)
+
+    executor.set_player_behavior(bench, dedent(GO_RIGHT))
+
+    with_bench = replace(state, players=[*state.players, bench])
+    assert await executor.decide(with_bench) == {"h9": Move(1.0, 0.0, 100.0)}
+
+
+# --- DT ---
+
+COACH = """
+    def decide_coach():
+        if is_penalty_shootout():
+            penalty_order([("h1", "b1")] * 5)
+        else:
+            set_behavior("h1", "b2")
+"""
+
+
+def coach_snapshot(penalty_shootout=False):
+    return CoachSnapshot(
+        own_score=0,
+        rival_score=0,
+        tick=0,
+        total_ticks=3000,
+        on_field=(("h1", "b1"),),
+        bench=(),
+        behaviors=(("b1", "Atacante"), ("b2", "Defensor")),
+        penalty_shootout=penalty_shootout,
+    )
+
+
+async def test_decide_with_coach_orders_by_side(state, make_executor):
+    # solo el local tiene DT
+    executor = make_executor(
+        state, {"h1": dedent(GO_RIGHT)}, {Side.HOME: dedent(COACH)}
+    )
+
+    actions, orders = await executor.decide_with_coach(
+        state, {Side.HOME: coach_snapshot(), Side.AWAY: coach_snapshot()}
+    )
+
+    assert actions == {"h1": Move(1.0, 0.0, 100.0)}
+    assert orders == {Side.HOME: [SetBehavior("h1", "b2")], Side.AWAY: []}
+    # decide sigue devolviendo solo las acciones
+    assert await executor.decide(state) == {"h1": Move(1.0, 0.0, 100.0)}
+
+
+async def test_decide_coaches_for_penalties(state, make_executor):
+    executor = make_executor(state, {}, {Side.HOME: dedent(COACH)})
+
+    orders = await executor.decide_coaches({Side.HOME: coach_snapshot(True)})
+
+    assert orders == {Side.HOME: [PenaltyOrder((("h1", "b1"),) * 5)]}

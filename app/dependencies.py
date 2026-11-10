@@ -9,6 +9,7 @@ from app.models.extra_models import TokenModel
 from app.repositories.club_repository import ClubRepository
 from app.security_api import get_token_bearerAuth
 from app.ws.connection_manager import ConnectionManager
+from app.ws.league_scheduler import LeagueScheduler, league_scheduler
 from app.ws.lobby_friendly import lobby_connection
 from app.ws.match.starter import MatchStarter, match_starter
 
@@ -27,3 +28,6 @@ def get_lobby_manager() -> ConnectionManager: #para poder mockear en los tests
 
 def get_match_starter() -> MatchStarter:  # para poder mockear en los tests
     return match_starter
+
+def get_league_scheduler() -> LeagueScheduler:  # para poder mockear en los tests
+    return league_scheduler

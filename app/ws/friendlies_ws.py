@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
  
 from app.db.session import SessionLocal
+from app.repositories.club_repository import ClubRepository
 from app.repositories.friendly_repository import FriendlyRepository
 from app.ws.auth import authenticate
 from app.ws.close_codes import NOT_FOUND
@@ -24,25 +25,25 @@ async def friendly_lobby(
     async with SessionLocal() as session:
         repo = FriendlyRepository(session)
         friendly = await repo.get(friendly_id)
-        rival_name = (
-            await repo.get_club_name(friendly.rival_club_id)
-            if friendly is not None and friendly.rival_club_id is not None
-            else None
-        )
+        rival_club_id = rival_name = None
+        if friendly is not None and friendly.rival_club_id is not None:
+            # a cada uno le mandamos el otro club: al creador, el que se unió,
+            # y al que se unió, el creador
+            club = await ClubRepository(session).get_by_user_id(user_id)
+            is_rival = club is not None and club.id == friendly.rival_club_id
+            rival_club_id = (
+                friendly.creator_club_id if is_rival else friendly.rival_club_id
+            )
+            rival_name = await repo.get_club_name(rival_club_id)
 
     if friendly is None:
         await ws.close(code=NOT_FOUND)
         return
 
-    rival_club_id = friendly.rival_club_id
-    rival_name = None
-    if rival_club_id is not None:
-        rival_name = await repo.get_club_name(rival_club_id)
-
-
     lobby_connection.connect(friendly_id, ws)
     try:
-        if rival_club_id is not None: # el rival ya se unió antes de que este cliente se conectara: se lo avisamos igual
+        # el amistoso ya tiene rival: le avisamos contra quién juega
+        if rival_club_id is not None:
             starts_at = friendly_start_times.get(friendly_id)
             try:
                 await lobby_connection.send(ws, {

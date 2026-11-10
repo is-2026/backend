@@ -56,7 +56,7 @@ async def test_create_friendly_ok(session):
     players = await make_players(session, club_id)
     squad = [SquadPlayerData(pid, i < 3, None) for i, pid in enumerate(players)]
 
-    friendly = await FriendlyRepository(session).create(club_id, "hash", squad)
+    friendly = await FriendlyRepository(session).create(club_id, "hash", squad, "TRIANGLE")
 
     assert friendly.id is not None
     assert friendly.creator_club_id == club_id
@@ -79,7 +79,7 @@ async def test_create_friendly_without_password(session):
     players = await make_players(session, club_id, n=1)
     squad = [SquadPlayerData(players[0], True, None)]
 
-    friendly = await FriendlyRepository(session).create(club_id, None, squad)
+    friendly = await FriendlyRepository(session).create(club_id, None, squad, "TRIANGLE")
 
     assert friendly.hashed_password is None
 
@@ -89,7 +89,7 @@ async def test_create_friendly_nonexistent_player_raises(session):
     squad = [SquadPlayerData(uuid.uuid4(), True, None)]  # jugador que no existe
 
     with pytest.raises(InvalidSquad):
-        await FriendlyRepository(session).create(club_id, "hash", squad)
+        await FriendlyRepository(session).create(club_id, "hash", squad, "TRIANGLE")
 
 
 async def test_create_friendly_duplicate_player_raises(session):
@@ -101,7 +101,7 @@ async def test_create_friendly_duplicate_player_raises(session):
     ]
 
     with pytest.raises(InvalidSquad):
-        await FriendlyRepository(session).create(club_id, "hash", squad)
+        await FriendlyRepository(session).create(club_id, "hash", squad, "TRIANGLE")
 
 
 async def test_list_available_friendlies_empty(session):
@@ -181,3 +181,86 @@ async def test_list_available_friendlies_success(session):
             assert repo.is_private(friendly) is False
         elif friendly.id == friendly_id_2:
             assert repo.is_private(friendly) is True
+
+
+async def test_get_club_names_only_requested_clubs(session):
+    club_ids = {}
+    for name in ("Boca", "River", "Racing"):
+        user = UserDB(
+            id=uuid.uuid4(), email=f"{name.lower()}@example.com", hashed_password="x"
+        )
+        session.add(user)
+        await session.flush()  # el usuario se inserta antes que el club
+        club = ClubDB(
+            id=uuid.uuid4(),
+            club_name=name,
+            avatar_url="https://example.com/a.png",
+            user_id=user.id,
+        )
+        session.add(club)
+        club_ids[name] = club.id
+    await session.commit()
+
+    repo = FriendlyRepository(session)
+    names = await repo.get_club_names([club_ids["Boca"], club_ids["River"]])
+
+    assert names == {club_ids["Boca"]: "Boca", club_ids["River"]: "River"}
+
+
+async def test_list_available_friendlies_filters_by_club_name_case_insensitive(session):
+    clubs = {}
+    for club_name in ("river plate", "Club Atletico River", "RIVER UNIDO", "Boca Juniors"):
+        user = UserDB(
+            id=uuid.uuid4(),
+            email=f"{uuid.uuid4()}@example.com",
+            hashed_password="x",
+        )
+        session.add(user)
+        await session.flush()
+        club = ClubDB(
+            id=uuid.uuid4(),
+            club_name=club_name,
+            avatar_url="https://example.com/a.png",
+            user_id=user.id,
+        )
+        session.add(club)
+        clubs[club_name] = club.id
+    await session.flush()
+
+    f_lower = FriendlyDB(
+        id=uuid.uuid4(),
+        creator_club_id=clubs["river plate"],
+        status="waiting_for_rival",
+    )
+    f_mixed = FriendlyDB(
+        id=uuid.uuid4(),
+        creator_club_id=clubs["Club Atletico River"],
+        status="waiting_for_rival",
+    )
+    f_upper = FriendlyDB(
+        id=uuid.uuid4(),
+        creator_club_id=clubs["RIVER UNIDO"],
+        status="waiting_for_rival",
+    )
+    f_other = FriendlyDB(
+        id=uuid.uuid4(),
+        creator_club_id=clubs["Boca Juniors"],
+        status="waiting_for_rival",
+    )
+    f_accepted = FriendlyDB(
+        id=uuid.uuid4(),
+        creator_club_id=clubs["river plate"],
+        status="accepted",
+    )
+    f_cancelled = FriendlyDB(
+        id=uuid.uuid4(),
+        creator_club_id=clubs["river plate"],
+        status="cancelled",
+    )
+    session.add_all([f_lower, f_mixed, f_upper, f_other, f_accepted, f_cancelled])
+    await session.commit()
+
+    repo = FriendlyRepository(session)
+    result = await repo.list_available_friendlies(club_name="river")
+
+    assert {f.id for f in result} == {f_lower.id, f_mixed.id, f_upper.id}

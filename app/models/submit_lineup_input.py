@@ -24,8 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, ClassVar, Dict, List
 from typing_extensions import Annotated
 from app.models.formation_preset import FormationPreset
-from app.models.submit_lineup_input_starters_inner import SubmitLineupInputStartersInner
-from app.models.submit_lineup_input_substitutes_inner import SubmitLineupInputSubstitutesInner
+from app.models.squad_player_input import SquadPlayerInput
 try:
     from typing import Self
 except ImportError:
@@ -36,9 +35,8 @@ class SubmitLineupInput(BaseModel):
     SubmitLineupInput
     """ # noqa: E501
     formation: FormationPreset
-    starters: Annotated[List[SubmitLineupInputStartersInner], Field(min_length=3, max_length=3)]
-    substitutes: Annotated[List[SubmitLineupInputSubstitutesInner], Field(min_length=3, max_length=3)]
-    __properties: ClassVar[List[str]] = ["formation", "starters", "substitutes"]
+    players: Annotated[List[SquadPlayerInput], Field(min_length=6, max_length=6)] = Field(description="Exactamente 3 con is_starter en true y 3 en false.")
+    __properties: ClassVar[List[str]] = ["formation", "players"]
 
     model_config = {
         "populate_by_name": True,
@@ -77,20 +75,13 @@ class SubmitLineupInput(BaseModel):
             },
             exclude_none=True,
         )
-        # override the default output from pydantic by calling `to_dict()` of each item in starters (list)
+        
         _items = []
-        if self.starters:
-            for _item in self.starters:
+        if self.players:
+            for _item in self.players:
                 if _item:
                     _items.append(_item.to_dict())
-            _dict['starters'] = _items
-        # override the default output from pydantic by calling `to_dict()` of each item in substitutes (list)
-        _items = []
-        if self.substitutes:
-            for _item in self.substitutes:
-                if _item:
-                    _items.append(_item.to_dict())
-            _dict['substitutes'] = _items
+            _dict['players'] = _items
         return _dict
 
     @classmethod
@@ -104,8 +95,7 @@ class SubmitLineupInput(BaseModel):
 
         _obj = cls.model_validate({
             "formation": obj.get("formation"),
-            "starters": [SubmitLineupInputStartersInner.from_dict(_item) for _item in obj.get("starters")] if obj.get("starters") is not None else None,
-            "substitutes": [SubmitLineupInputSubstitutesInner.from_dict(_item) for _item in obj.get("substitutes")] if obj.get("substitutes") is not None else None
+            "players": [SquadPlayerInput.from_dict(_item) for _item in obj.get("players")] if obj.get("players") is not None else None
         })
         return _obj
 

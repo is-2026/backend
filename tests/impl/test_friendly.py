@@ -6,17 +6,22 @@ import pytest
 from fastapi import HTTPException
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.db.club import ClubDB
+from app.db.friendly import FriendlyDB
+from app.db.user import UserDB
 from app.impl import friendlies_api_impl
 from app.impl.friendlies_api_impl import FriendliesApiImpl, _validate_squad
 from app.models.create_friendly_input import CreateFriendlyInput
 from app.models.join_friendly_input import JoinFriendlyInput
 from app.models.squad_player_input import SquadPlayerInput
 from app.repositories.friendly_repository import FriendlyUnavailable, InvalidSquad
+from app.security.tokens import create_access_token
 
 
 CANT_JUGADORES = 6
 CLUB_CREATOR = uuid.uuid4()
 CLUB_RIVAL = uuid.uuid4()
+CLUB_NAMES = {CLUB_CREATOR: "Boca", CLUB_RIVAL: "River"}
 
 def make_squad( starters : int, total : int = CANT_JUGADORES) -> list[SquadPlayerInput]:
     return[
@@ -56,6 +61,8 @@ def mocks(monkeypatch):
     m.verify_password = AsyncMock(return_value=True)
  
     m.player_repo.count_club_players.return_value = CANT_JUGADORES #la cant de jugadores por repo es 6
+    # nombre de cada club según su id
+    m.friendly_repo.get_club_name.side_effect = CLUB_NAMES.get
  
     monkeypatch.setattr(friendlies_api_impl, "FriendlyRepository", MagicMock(return_value=m.friendly_repo)) #mockeo, reemplazo lo que espera por mis mocks 
     monkeypatch.setattr(friendlies_api_impl, "PlayerRepository", MagicMock(return_value=m.player_repo))
@@ -66,7 +73,7 @@ def mocks(monkeypatch):
 @pytest.fixture
 def api(mocks): #lo que vamos a testear
     impl = FriendliesApiImpl(session=MagicMock(), lobby_manager=mocks.lobby)
-    impl._schedule_start = MagicMock()  # schedule_start es lo que crea el timer de 30s, como no lo queremos ponemos un mock
+    impl._schedule_start = MagicMock()  # schedule_start es lo que crea el timer del lobby, como no lo queremos ponemos un mock
     return impl
  
  
@@ -92,11 +99,12 @@ async def test_create_friendly_public(api, mocks):
         id=uuid.uuid4(), creator_club_id=CLUB_CREATOR, status="waiting_for_rival"
     )
  
-    result = await api.create_friendly(CreateFriendlyInput(players=make_squad(3)), CLUB_CREATOR)
+    result = await api.create_friendly(CreateFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_CREATOR)
  
     mocks.hash_password.assert_not_awaited()  # sin contraseña no se hashea nada
     assert result.is_private is False
     assert result.rival_club_id is None
+    assert result.creator_club_name == "Boca"
  
  
 async def test_create_friendly_private(api, mocks):
@@ -105,18 +113,30 @@ async def test_create_friendly_private(api, mocks):
     )
  
     result = await api.create_friendly(
-        CreateFriendlyInput(players=make_squad(3), password="1234"), CLUB_CREATOR
+        CreateFriendlyInput(formation="TRIANGLE", players=make_squad(3), password="1234"), CLUB_CREATOR
     )
  
     mocks.hash_password.assert_awaited_once_with("1234")
     assert result.is_private is True
  
  
+async def test_create_friendly_saves_formation(api, mocks):
+    mocks.friendly_repo.create.return_value = SimpleNamespace(
+        id=uuid.uuid4(), creator_club_id=CLUB_CREATOR, status="waiting_for_rival"
+    )
+
+    await api.create_friendly(
+        CreateFriendlyInput(formation="DEFENSIVE_LINE", players=make_squad(3)), CLUB_CREATOR
+    )
+
+    assert mocks.friendly_repo.create.await_args.kwargs["formation"] == "DEFENSIVE_LINE"
+
+
 async def test_create_friendly_players_other_club(api, mocks):
     mocks.player_repo.count_club_players.return_value = 5  # uno no es del club
  
     with pytest.raises(HTTPException) as error:
-        await api.create_friendly(CreateFriendlyInput(players=make_squad(3)), CLUB_CREATOR)
+        await api.create_friendly(CreateFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_CREATOR)
  
     assert error.value.status_code == 400
     mocks.friendly_repo.create.assert_not_awaited()  # no se llegó a crear nada
@@ -126,7 +146,7 @@ async def test_create_friendly_squad_invalid(api, mocks):
     mocks.friendly_repo.create.side_effect = InvalidSquad()  # el repo falla
  
     with pytest.raises(HTTPException) as error:
-        await api.create_friendly(CreateFriendlyInput(players=make_squad(3)), CLUB_CREATOR)
+        await api.create_friendly(CreateFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_CREATOR)
  
     assert error.value.status_code == 400
  
@@ -137,7 +157,7 @@ async def test_join_friendly_not_exist(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            uuid.uuid4(), JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+            uuid.uuid4(), JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
         )
  
     assert error.value.status_code == 404
@@ -150,7 +170,7 @@ async def test_join_friendly_not_available(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
         )
  
     assert error.value.status_code == 409
@@ -163,7 +183,7 @@ async def test_join_own_friendly(api, mocks):
     with pytest.raises(HTTPException) as error:
         # entra el mismo club que lo creó
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_CREATOR
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_CREATOR
         )
  
     assert error.value.status_code == 409
@@ -174,7 +194,7 @@ async def test_join_friendly_private_without_password(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
         )
  
     assert error.value.status_code == 400
@@ -189,7 +209,7 @@ async def test_join_friendly_password_incorrect(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3), password="mala"), CLUB_RIVAL
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3), password="mala"), CLUB_RIVAL
         )
  
     assert error.value.status_code == 400
@@ -202,7 +222,7 @@ async def test_join_friendly_squad_invalid(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(2)), CLUB_RIVAL  # solo 2 titulares
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(2)), CLUB_RIVAL  # solo 2 titulares
         )
  
     assert error.value.status_code == 400
@@ -216,7 +236,7 @@ async def test_join_friendly_players_other_club(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
         )
  
     assert error.value.status_code == 400
@@ -230,7 +250,7 @@ async def test_join_friendly_other_user_joined_first(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
         )
  
     assert error.value.status_code == 409
@@ -245,7 +265,7 @@ async def test_join_friendly_repo_squad_invalid(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
         )
  
     assert error.value.status_code == 400
@@ -266,14 +286,15 @@ async def test_join_friendly_ok(api, mocks):
         ),
         match,
     )
-    mocks.friendly_repo.get_club_name.return_value = "River"
  
     result = await api.join_friendly(
-        friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+        friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
     )
  
     # 1. devuelve el friendly con rival y match
     assert result.rival_club_id == CLUB_RIVAL
+    # el nombre del creador, no el del que se une
+    assert result.creator_club_name == "Boca"
     assert result.match_id == match.id
  
     # 2. avisó por websocket
@@ -286,15 +307,30 @@ async def test_join_friendly_ok(api, mocks):
     # 3. agendó el inicio del match
     api._schedule_start.assert_called_once_with(friendly.id, match.id)
  
+async def test_join_friendly_saves_formation(api, mocks):
+    friendly = friendly_waiting()
+    mocks.friendly_repo.get.return_value = friendly
+    mocks.friendly_repo.accept.return_value = (
+        friendly_accepted(friendly),
+        SimpleNamespace(id=uuid.uuid4()),
+    )
+
+    await api.join_friendly(
+        friendly.id,
+        JoinFriendlyInput(formation="OFFENSIVE_LINE", players=make_squad(3)),
+        CLUB_RIVAL,
+    )
+
+    assert mocks.friendly_repo.accept.await_args.args[3] == "OFFENSIVE_LINE"
+
 async def test_join_friendly_private_correct_password(api, mocks):
     friendly = friendly_waiting(hashed_password="hashed")
     match = SimpleNamespace(id=uuid.uuid4())
     mocks.friendly_repo.get.return_value = friendly
     mocks.friendly_repo.accept.return_value = (friendly_accepted(friendly, "hashed"), match)
-    mocks.friendly_repo.get_club_name.return_value = "River"
  
     result = await api.join_friendly(
-        friendly.id, JoinFriendlyInput(players=make_squad(3), password="1234"), CLUB_RIVAL
+        friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3), password="1234"), CLUB_RIVAL
     )
  
     mocks.verify_password.assert_awaited_once_with("1234", "hashed")
@@ -332,6 +368,9 @@ async def test_list_friendlies_returns_list(mocked_repo_class):
     
     # Configuramos el mock del repositorio
     mocked_repo.list_available_friendlies = AsyncMock(return_value=fake_list)
+    mocked_repo.get_club_names = AsyncMock(
+        return_value={club_id_1: "Boca", club_id_2: "River"}
+    )
     
     # Configuramos el comportamiento del método is_private
     def mock_is_private(f):
@@ -356,6 +395,10 @@ async def test_list_friendlies_returns_list(mocked_repo_class):
     assert result[1].creator_club_id == club_id_2
     assert result[1].is_private is True
     assert result[1].status == "waiting_for_rival"
+
+    assert result[0].creator_club_name == "Boca"
+    assert result[1].creator_club_name == "River"
+    mocked_repo.get_club_names.assert_awaited_once_with([club_id_1, club_id_2])
     
     mocked_repo.list_available_friendlies.assert_awaited_once()
 
@@ -373,4 +416,114 @@ async def test_list_friendlies_returns_empty(mocked_repo_class):
     result = await api.list_friendlies()
 
     assert result == []
-    mocked_repo.list_available_friendlies.assert_awaited_once()
+    # sin amistosos no consulta los nombres
+    mocked_repo.get_club_names.assert_not_called()
+    mocked_repo.list_available_friendlies.assert_awaited_once_with(club_name=None)
+
+
+@patch("app.impl.friendlies_api_impl.FriendlyRepository")
+async def test_list_friendlies_with_club_name_filter(mocked_repo_class):
+    mocked_repo = MagicMock()
+    friendly_id = uuid.uuid4()
+    club_id = uuid.uuid4()
+
+    mock_friendly = MagicMock()
+    mock_friendly.id = friendly_id
+    mock_friendly.creator_club_id = club_id
+    mock_friendly.rival_club_id = None
+    mock_friendly.status = "waiting_for_rival"
+    mock_friendly.match_id = None
+
+    mocked_repo.list_available_friendlies = AsyncMock(return_value=[mock_friendly])
+    mocked_repo.get_club_names = AsyncMock(return_value={club_id: "River Plate"})
+    mocked_repo.is_private.return_value = False
+    mocked_repo_class.return_value = mocked_repo
+
+    api = FriendliesApiImpl(MagicMock(), lobby_manager=MagicMock())
+    result = await api.list_friendlies(club_name="river")
+
+    mocked_repo.list_available_friendlies.assert_awaited_once_with(club_name="river")
+    assert len(result) == 1
+    assert result[0].id == friendly_id
+    assert result[0].creator_club_name == "River Plate"
+
+
+async def test_endpoint_list_friendlies_filters_by_club_name_case_insensitive(
+    client, session
+):
+    clubs = {}
+    for club_name in ("river plate", "Club River", "RIVER FC", "Boca Juniors"):
+        user = UserDB(
+            id=uuid.uuid4(),
+            email=f"{uuid.uuid4()}@example.com",
+            hashed_password="hash",
+        )
+        session.add(user)
+        await session.flush()
+        club = ClubDB(
+            id=uuid.uuid4(),
+            club_name=club_name,
+            avatar_url="https://example.com/a.png",
+            user_id=user.id,
+        )
+        session.add(club)
+        clubs[club_name] = (club, user)
+    await session.flush()
+
+    session.add_all(
+        [
+            FriendlyDB(
+                id=uuid.uuid4(),
+                creator_club_id=clubs["river plate"][0].id,
+                status="waiting_for_rival",
+            ),
+            FriendlyDB(
+                id=uuid.uuid4(),
+                creator_club_id=clubs["Club River"][0].id,
+                status="waiting_for_rival",
+            ),
+            FriendlyDB(
+                id=uuid.uuid4(),
+                creator_club_id=clubs["RIVER FC"][0].id,
+                status="waiting_for_rival",
+            ),
+            FriendlyDB(
+                id=uuid.uuid4(),
+                creator_club_id=clubs["Boca Juniors"][0].id,
+                status="waiting_for_rival",
+            ),
+            FriendlyDB(
+                id=uuid.uuid4(),
+                creator_club_id=clubs["river plate"][0].id,
+                status="accepted",
+            ),
+        ]
+    )
+    await session.commit()
+
+    token = create_access_token(clubs["Boca Juniors"][1].id)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # sin club_name devuelve todos los waiting_for_rival
+    r_all = await client.get("/friendlies", headers=headers)
+    assert r_all.status_code == 200
+    assert len(r_all.json()) == 4
+    assert all(item["creator_club_name"] is not None for item in r_all.json())
+
+    # con club_name=river filtra sin distinguir mayúsculas
+    r_filtered = await client.get("/friendlies?club_name=river", headers=headers)
+    assert r_filtered.status_code == 200
+    data = r_filtered.json()
+    assert len(data) == 3
+    assert {item["creator_club_name"] for item in data} == {
+        "river plate",
+        "Club River",
+        "RIVER FC",
+    }
+
+
+async def test_endpoint_list_friendlies_without_token_returns_401(client):
+    r = await client.get("/friendlies")
+
+    assert r.status_code == 401
+    assert "message" in r.json()

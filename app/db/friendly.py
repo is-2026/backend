@@ -24,6 +24,14 @@ class FriendlyDB(Base):
 
     status : Mapped[str] = mapped_column(String(200), default="waiting_for_rival")
 
+    # formación con la que juega cada club (valores de FormationPreset)
+    creator_formation: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="TRIANGLE", server_default="TRIANGLE"
+    )
+    rival_formation: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="TRIANGLE", server_default="TRIANGLE"
+    )
+
     match_id : Mapped[uuid.UUID] = mapped_column(
         ForeignKey("matches.id"), nullable= True
     )
@@ -51,5 +59,5 @@ class FriendlyPlayerDB(Base):
     is_starter : Mapped[bool] = mapped_column(Boolean, nullable=False)
 
     behavior_id : Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("behaviors.id"), nullable= True
+        ForeignKey("behaviors.id", ondelete="SET NULL"), nullable= True
     )

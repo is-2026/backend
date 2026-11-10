@@ -20,7 +20,7 @@ import json
 
 
 
-from pydantic import BaseModel, ConfigDict, StrictInt
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
 from uuid import UUID
 from app.models.match_status import MatchStatus
@@ -34,12 +34,31 @@ class Match(BaseModel):
     Match
     """ # noqa: E501
     id: Optional[UUID] = None
+    league_id: Optional[UUID] = None
+    round_number: Optional[StrictInt] = None
     home_club_id: Optional[UUID] = None
+    home_club_name: Optional[StrictStr] = None
     away_club_id: Optional[UUID] = None
+    away_club_name: Optional[StrictStr] = None
     status: Optional[MatchStatus] = None
     home_score: Optional[StrictInt] = None
     away_score: Optional[StrictInt] = None
-    __properties: ClassVar[List[str]] = ["id", "home_club_id", "away_club_id", "status", "home_score", "away_score"]
+    home_penalties: Optional[StrictInt] = None
+    away_penalties: Optional[StrictInt] = None
+    __properties: ClassVar[List[str]] = [
+        "id",
+        "league_id",
+        "round_number",
+        "home_club_id",
+        "home_club_name",
+        "away_club_id",
+        "away_club_name",
+        "status",
+        "home_score",
+        "away_score",
+        "home_penalties",
+        "away_penalties",
+    ]
 
     model_config = {
         "populate_by_name": True,
@@ -78,6 +97,16 @@ class Match(BaseModel):
             },
             exclude_none=True,
         )
+        # set to None if league_id (nullable) is None
+        # and model_fields_set contains the field
+        if self.league_id is None and "league_id" in self.model_fields_set:
+            _dict['league_id'] = None
+
+        # set to None if round_number (nullable) is None
+        # and model_fields_set contains the field
+        if self.round_number is None and "round_number" in self.model_fields_set:
+            _dict['round_number'] = None
+
         # set to None if home_score (nullable) is None
         # and model_fields_set contains the field
         if self.home_score is None and "home_score" in self.model_fields_set:
@@ -87,6 +116,16 @@ class Match(BaseModel):
         # and model_fields_set contains the field
         if self.away_score is None and "away_score" in self.model_fields_set:
             _dict['away_score'] = None
+
+        # set to None if home_penalties (nullable) is None
+        # and model_fields_set contains the field
+        if self.home_penalties is None and "home_penalties" in self.model_fields_set:
+            _dict['home_penalties'] = None
+
+        # set to None if away_penalties (nullable) is None
+        # and model_fields_set contains the field
+        if self.away_penalties is None and "away_penalties" in self.model_fields_set:
+            _dict['away_penalties'] = None
 
         return _dict
 
@@ -101,11 +140,17 @@ class Match(BaseModel):
 
         _obj = cls.model_validate({
             "id": obj.get("id"),
+            "league_id": obj.get("league_id"),
+            "round_number": obj.get("round_number"),
             "home_club_id": obj.get("home_club_id"),
+            "home_club_name": obj.get("home_club_name"),
             "away_club_id": obj.get("away_club_id"),
+            "away_club_name": obj.get("away_club_name"),
             "status": obj.get("status"),
             "home_score": obj.get("home_score"),
-            "away_score": obj.get("away_score")
+            "away_score": obj.get("away_score"),
+            "home_penalties": obj.get("home_penalties"),
+            "away_penalties": obj.get("away_penalties")
         })
         return _obj
 

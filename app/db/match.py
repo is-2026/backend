@@ -1,7 +1,8 @@
-import uuid, enum
+import enum
+import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Enum
+from sqlalchemy import Enum, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -38,14 +39,20 @@ class MatchDB(Base):
         )
     home_score: Mapped[int | None]
     away_score: Mapped[int | None]
-
-    # por ahora todos los partidos tienen league_id=none
+    # penales convertidos en la tanda, null si no se definió por penales
+    home_penalties: Mapped[int | None]
+    away_penalties: Mapped[int | None]
     league_id: Mapped[uuid.UUID | None] = mapped_column(
-        #ForeignKey("leagues.id"),
-        default=None
+        ForeignKey("leagues.id"),
+        default=None,
+        nullable=True   #para friendlies
         )
+    round_number: Mapped[int | None] = mapped_column(
+        default=None,
+        nullable=True   #para friendlies
+    )
 
-    # RELATIONSHIPS --
+    # RELATIONSHIPS
     # 1 partido tiene 1 club local
     home_club: Mapped["ClubDB"] = relationship(
         foreign_keys=[home_club_id], 

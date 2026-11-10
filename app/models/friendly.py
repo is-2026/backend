@@ -34,11 +34,12 @@ class Friendly(BaseModel):
     """ # noqa: E501
     id: Optional[UUID] = None
     creator_club_id: Optional[UUID] = None
+    creator_club_name: Optional[StrictStr] = None
     rival_club_id: Optional[UUID] = None
     is_private: Optional[StrictBool] = None
     status: Optional[StrictStr] = None
     match_id: Optional[UUID] = None
-    __properties: ClassVar[List[str]] = ["id", "creator_club_id", "rival_club_id", "is_private", "status", "match_id"]
+    __properties: ClassVar[List[str]] = ["id", "creator_club_id", "creator_club_name", "rival_club_id", "is_private", "status", "match_id"]
 
     @field_validator('status')
     def status_validate_enum(cls, value):
@@ -111,6 +112,7 @@ class Friendly(BaseModel):
         _obj = cls.model_validate({
             "id": obj.get("id"),
             "creator_club_id": obj.get("creator_club_id"),
+            "creator_club_name": obj.get("creator_club_name"),
             "rival_club_id": obj.get("rival_club_id"),
             "is_private": obj.get("is_private"),
             "status": obj.get("status"),

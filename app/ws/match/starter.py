@@ -2,15 +2,24 @@ import asyncio
 import logging
 import uuid
 
+from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
 from app.db.match import MatchDB, MatchStatus
 from app.db.session import SessionLocal
-from app.engine.constants import FRIENDLY_TOTAL_TICKS, TRIANGLE_HOME
+from app.engine.constants import (
+    DEFAULT_FORMATION,
+    FORMATIONS,
+    FRIENDLY_TOTAL_TICKS,
+    TICKS_PER_MINUTE,
+)
 from app.engine.state import MatchState, PlayerState, Side
+from app.repositories.behavior_repository import BehaviorRepository
 from app.repositories.club_repository import ClubRepository
 from app.repositories.friendly_repository import FriendlyRepository, SquadMember
+from app.repositories.league_repository import LeagueRepository
 from app.repositories.match_repository import MatchRepository
-from app.ws.match.messages import ClubSummary, LineupPlayer, MatchInfo
+from app.ws.match.coach import ClubBehavior, CoachSetup
+from app.ws.match.info import ClubSummary, LineupPlayer, MatchInfo
 from app.ws.match.runner import LiveMatch, live_matches, start_match
 
 logger = logging.getLogger(__name__)
@@ -36,7 +45,11 @@ def _player_state(member: SquadMember, side: Side) -> PlayerState:
 
 
 def build_match_state(
-    match: MatchDB, squad: list[SquadMember]
+    match: MatchDB,
+    squad: list[SquadMember],
+    total_ticks: int = FRIENDLY_TOTAL_TICKS,  # por defecto: duracion de un friendly
+    home_formation: str = DEFAULT_FORMATION,
+    away_formation: str = DEFAULT_FORMATION,
 ) -> tuple[MatchState, dict[str, str]]:
     """Arma el estado inicial del motor y codes = player_id -> código.
     Solo entran los titulares; su orden en `squad` decide la posición en la formación."""
@@ -50,12 +63,12 @@ def build_match_state(
 
     state = MatchState(
         home_team_id=str(match.home_club_id),
-        home_formation=TRIANGLE_HOME,
+        home_formation=FORMATIONS[home_formation],
         away_team_id=str(match.away_club_id),
-        away_formation=TRIANGLE_HOME,  # el motor lo espeja
+        away_formation=FORMATIONS[away_formation],  # el motor lo espeja
         players=[_player_state(m, Side.HOME) for m in home]
         + [_player_state(m, Side.AWAY) for m in away],
-        total_ticks=FRIENDLY_TOTAL_TICKS,
+        total_ticks=total_ticks,
     )
     codes = {str(m.player.id): m.behavior.code for m in starters}
     return state, codes
@@ -94,6 +107,26 @@ def build_match_info(
     )
 
 
+def build_coach_setup(club: ClubDB, behaviors: list[BehaviorDB]) -> CoachSetup | None:
+    if club.coach_behavior_id is None:
+        return None
+    coach = next(
+        (b for b in behaviors if b.id == club.coach_behavior_id and b.kind == "coach"),
+        None,
+    )
+    if coach is None:
+        logger.warning("El DT %s del club %s no existe", club.coach_behavior_id, club.id)
+        return None
+    return CoachSetup(
+        code=coach.code,
+        behaviors={
+            str(b.id): ClubBehavior(name=b.name, code=b.code)
+            for b in behaviors
+            if b.kind == "player"
+        },
+    )
+
+
 class MatchStarter:
     """Carga un partido de la base y lo larga en el runner."""
 
@@ -102,9 +135,9 @@ class MatchStarter:
         self._session_factory = session_factory
         self._tasks: set[asyncio.Task] = set()
 
-    async def start(self, match_id: uuid.UUID) -> None:
+    async def start(self, match_id: uuid.UUID) -> asyncio.Task | None:
         if match_id in live_matches:
-            return
+            return None
 
         async with self._session_factory() as session:
             match = await MatchRepository(session).get_by_id(match_id)
@@ -113,26 +146,106 @@ class MatchStarter:
             clubs = ClubRepository(session)
             home_club = await clubs.get_by_id(match.home_club_id)
             away_club = await clubs.get_by_id(match.away_club_id)
-            squad = await FriendlyRepository(session).get_squad_by_match(match_id)
 
-            state, codes = build_match_state(match, squad)
+            # es partido de liga
+            if match.league_id is not None:
+                leagues = LeagueRepository(session)
+                league = await leagues.get(match.league_id)
+                squad = await leagues.get_squad_by_match(match_id)
+                total_ticks = league.match_duration_minutes * TICKS_PER_MINUTE
+                allows_draws = league.allows_draws
+                # la formación vigente de cada club en la liga (la cambia PUT /leagues/{id}/lineup)
+                home = await leagues.get_enrollment(match.league_id, match.home_club_id)
+                away = await leagues.get_enrollment(match.league_id, match.away_club_id)
+                home_formation, away_formation = home.formation, away.formation
+            else:
+                friendlies = FriendlyRepository(session)
+                squad = await friendlies.get_squad_by_match(match_id)
+                total_ticks = FRIENDLY_TOTAL_TICKS
+                allows_draws = True  # los amistosos admiten empate
+                home_formation, away_formation = await friendlies.get_formations_by_match(
+                    match_id
+                )
+
+            state, codes = build_match_state(
+                match,
+                squad,
+                total_ticks=total_ticks,
+                home_formation=home_formation,
+                away_formation=away_formation,
+            )
             info = build_match_info(home_club, away_club, squad)
 
-            live = start_match(match_id, state, codes, info)
+            # cargo los DT
+            coaches: dict[str, CoachSetup] = {}
+            for club in (home_club, away_club):
+                if club.coach_behavior_id is None:
+                    continue
+                behaviors = await BehaviorRepository(session).list_by_club(club.id)
+                setup = build_coach_setup(club, behaviors)
+                if setup is not None:
+                    coaches[str(club.id)] = setup
+
+            live = start_match(
+                match_id,
+                state,
+                codes,
+                info,
+                allows_draws=allows_draws,
+                coaches=coaches,
+            )
             await MatchRepository(session).set_status(match_id, MatchStatus.in_progress)
 
-        task = asyncio.create_task(self._save_result(live))
+        task = asyncio.create_task(
+            self._save_result(
+                live,
+                league_id=match.league_id,
+                home_club_id=match.home_club_id,
+                away_club_id=match.away_club_id,
+            )
+        )
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+        # para una liga, se pueden esperar todas las tasks (matchs) antes de iniciar otra fecha
+        return task
 
-    async def _save_result(self, live: LiveMatch) -> None:
+    async def _save_result(
+        self,
+        live: LiveMatch,
+        *,
+        league_id: uuid.UUID | None = None,
+        home_club_id: uuid.UUID | None = None,
+        away_club_id: uuid.UUID | None = None,
+    ) -> None:
         """Espera a que termine el runner y guarda el resultado."""
         await live.task
         try:
             async with self._session_factory() as session:
                 await MatchRepository(session).finish(
-                    live.match_id, live.state.home_score, live.state.away_score
+                    live.match_id,
+                    live.state.home_score,
+                    live.state.away_score,
+                    live.shootout.home_penalties if live.shootout else None,
+                    live.shootout.away_penalties if live.shootout else None,
                 )
+
+                # es partido de liga
+                if league_id is not None:
+                    penalty_winner_id = None
+                    if live.shootout is not None:
+                        penalty_winner_id = (
+                            home_club_id
+                            if live.shootout.winner == Side.HOME
+                            else away_club_id
+                        )
+                    await LeagueRepository(session).update_standings(
+                        league_id,
+                        home_club_id,
+                        away_club_id,
+                        live.state.home_score,
+                        live.state.away_score,
+                        penalty_winner_id,
+                    )
         except Exception:
             logger.exception("No se pudo guardar el resultado de %s", live.match_id)
 

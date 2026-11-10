@@ -7,9 +7,11 @@ from uuid import UUID
 from app.models.change_avatar_input import ChangeAvatarInput
 from app.models.change_default_formation_input import ChangeDefaultFormationInput
 from app.models.club import Club
+from app.models.club_profile import ClubProfile
 from app.models.create_club_input import CreateClubInput
 from app.models.error import Error
 from app.models.history_item import HistoryItem
+from app.models.change_coach_input import ChangeCoachInput
 from app.security_api import get_token_bearerAuth
 
 class BaseClubApi:
@@ -20,6 +22,7 @@ class BaseClubApi:
         BaseClubApi.subclasses = BaseClubApi.subclasses + (cls,)
     async def get_my_club(
         self,
+        club_id: UUID,
     ) -> Club:
         """Identifica al club mediante el token de sesión."""
         ...
@@ -63,5 +66,12 @@ class BaseClubApi:
     async def get_club(
         self,
         club_id: UUID,
+    ) -> ClubProfile:
+        ...
+
+    async def change_coach(
+        self,
+        change_coach_input: ChangeCoachInput,
+        club_id : UUID
     ) -> Club:
         ...

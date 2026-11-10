@@ -1,14 +1,55 @@
+import builtins
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from math import hypot, isfinite
-from types import CodeType
+from types import CodeType, SimpleNamespace
 
 from app.engine.actions import Action, Move, PassTo, Shoot, ShootAtGoal
+from app.engine.coach_orders import CoachOrder, PenaltyOrder, SetBehavior, Substitute
+from app.engine.constants import PENALTIES_PER_TEAM
 from app.engine.engine import control_radius
 from app.engine.state import MatchState, PlayerState, Side
+from app.engine.validation import InvalidBehaviorCode
 
 logger = logging.getLogger(__name__)
+
+
+# Lo único de python que puede usar un comportamiento (además de import math)
+# Lo que no está acá (open, eval, ...) no existe al ejecutar
+SAFE_BUILTINS = (
+    "abs",
+    "min",
+    "max",
+    "round",
+    "sum",
+    "len",
+    "range",
+    "enumerate",
+    "zip",
+    "sorted",
+    "reversed",
+    "map",
+    "filter",
+    "any",
+    "all",
+    "isinstance",
+    "list",
+    "dict",
+    "tuple",
+    "set",
+    "float",
+    "int",
+    "bool",
+    "str",
+    "Exception",
+    "ValueError",
+    "TypeError",
+    "ZeroDivisionError",
+    "IndexError",
+    "KeyError",
+)
 
 
 @dataclass(frozen=True)
@@ -35,8 +76,16 @@ class Snapshot:
     total_ticks: int
 
 
-class InvalidBehaviorCode(Exception):
-    """Comportamiento con sintaxis inválida"""
+@dataclass(frozen=True)
+class CoachSnapshot:
+    own_score: int
+    rival_score: int
+    tick: int
+    total_ticks: int
+    on_field: tuple[tuple[str, str], ...]  # (player_id, behavior_id)
+    bench: tuple[str, ...]  # player_id
+    behaviors: tuple[tuple[str, str], ...]  # (behavior_id, nombre) de jugador
+    penalty_shootout: bool  # True solo en la llamada de la ventana de penales
 
 
 def _to_view(x: float, y: float, side: Side) -> tuple[float, float]:
@@ -85,6 +134,21 @@ def take_snapshot(state: MatchState, side: Side) -> Snapshot:
     )
 
 
+def _safe_builtins() -> dict[str, object]:
+    """Builtins de un brain. Cada brain recibe un dict y un math propios:
+    si un comportamiento hace math.pi = 3 o pisa abs, no le cambia nada a otro"""
+    public = {name: getattr(math, name) for name in dir(math) if name[0] != "_"}
+    own_math = SimpleNamespace(**public)
+
+    def import_only_math(name, globals=None, locals=None, fromlist=(), level=0):
+        # Python lo llama en cada import
+        return own_math
+
+    safe = {name: getattr(builtins, name) for name in SAFE_BUILTINS}
+    safe["__import__"] = import_only_math
+    return safe
+
+
 def compile_behavior(code: str, name: str) -> CodeType:
     # el filename es lo que aparece en el traceback por ej: File "<behavior h1>", line x
     # la sintaxis se valida al guardar el comportamiento, acá es solo defensa
@@ -106,6 +170,7 @@ class PlayerBrain:
         self._snapshot: Snapshot | None = None
 
         namespace = {
+            "__builtins__": _safe_builtins(),
             "my_pos": self.my_pos,
             "ball_pos": self.ball_pos,
             "has_ball": self.has_ball,
@@ -194,6 +259,8 @@ class PlayerBrain:
             return None
         try:
             self._decide()
+        except MemoryError:
+            raise  # para que no me lo coma el except Exception
         except Exception:
             logger.exception(
                 "El comportamiento del jugador %s falló en decide_action()",
@@ -201,6 +268,152 @@ class PlayerBrain:
             )
             return None
         return self._action
+
+
+def load_brain(player: PlayerState, code: str) -> PlayerBrain | None:
+    try:
+        compiled_code = compile_behavior(code, player.id)
+    except InvalidBehaviorCode:
+        logger.exception("El comportamiento del jugador %s no compila", player.id)
+        return None
+    return PlayerBrain(player, compiled_code)
+
+
+def _check_input_penalty(value: object) -> bool:
+    return (
+        isinstance(value, (list, tuple)) and len(value) == 2
+    )  # chequea que cada pateador que pasa DT al penalty sea una lista o una tupla de 2 elementos
+
+
+class CoachBrain:
+    """El DT de un equipo. Solo se aplican las reglas que dependen
+    del propio DT (cuándo vale cada primitiva y que gana la primera llamada)."""
+
+    def __init__(self, side: Side, code: CodeType):
+        self._side = side
+
+        self._decide: (
+            Callable[[], None] | None
+        )  # Callable es para decir, che self._decide puede ser llamado como una funcion.
+
+        self._snapshot: CoachSnapshot | None = None
+        self._orders: list[CoachOrder] = []  # cargo lo que pide el DT
+        # para que gane la primera llamada en cada run
+        self._players_ordered: set[str] = (
+            set()
+        )  # Para ignorar en caso que el DT vuelva a asignarle un set_behavior al mismo player
+        self._substituted = False  # para indicar si ya hizo una sustitucion o no
+        self._penalty_ordered = False  # para indicar si el dt llamo a penalty_order
+
+        namespace = {
+            "__builtins__": _safe_builtins(),  # funciones de python que puede usar el codigo
+            "score": self.score,  ##Primitivas.
+            "time": self.time,
+            "total_time": self.total_time,
+            "on_field": self.on_field,
+            "bench": self.bench,
+            "behaviors": self.behaviors,
+            "is_penalty_shootout": self.is_penalty_shootout,
+            "set_behavior": self.set_behavior,
+            "substitute": self.substitute,
+            "penalty_order": self.penalty_order,
+        }
+        try:
+            exec(code, namespace)
+        except Exception:
+            logger.exception("No se pudo cargar el DT de %s", self._side)
+            self._decide = None
+        else:
+            self._decide = namespace.get("decide_coach")
+            if self._decide is None:
+                logger.warning("El DT de %s no define decide_coach()", self._side)
+
+    # --- primitivas de lectura ---
+    def score(self) -> tuple[int, int]:
+        return self._snapshot.own_score, self._snapshot.rival_score
+
+    def time(self) -> int:
+        return self._snapshot.tick
+
+    def total_time(self) -> int:
+        return self._snapshot.total_ticks
+
+    def on_field(self) -> list[tuple[str, str]]:
+        return list(self._snapshot.on_field)
+
+    def bench(self) -> list[str]:
+        return list(self._snapshot.bench)
+
+    def behaviors(self) -> list[tuple[str, str]]:
+        return list(self._snapshot.behaviors)
+
+    def is_penalty_shootout(self) -> bool:
+        return self._snapshot.penalty_shootout
+
+    # --- primitivas de acción ---
+    def set_behavior(self, player_id: str, behavior_id: str):
+        if self._snapshot.penalty_shootout:
+            return
+        player_id, behavior_id = str(player_id), str(behavior_id)
+        if player_id in self._players_ordered:
+            return  # gana la primera para cada jugador
+        self._players_ordered.add(player_id)
+        # si ya tiene ese comportamiento no hago nada: así el hijo no lo recarga
+        if (player_id, behavior_id) in self._snapshot.on_field:
+            return
+        self._orders.append(SetBehavior(player_id, behavior_id))
+
+    def substitute(self, player_out_id: str, player_in_id: str, behavior_id: str):
+        if self._snapshot.penalty_shootout or self._substituted:
+            return  # el club puede tener una sola pendiente: gana la primera
+        self._substituted = True
+        self._orders.append(
+            Substitute(str(player_out_id), str(player_in_id), str(behavior_id))
+        )
+
+    def penalty_order(self, kickers: list[tuple[str, str]]):
+        if not self._snapshot.penalty_shootout or self._penalty_ordered:
+            return
+        # la primera llamada cuenta aunque esté mal formada
+        self._penalty_ordered = True
+        # si la forma es inválida se ignora sin lanzar: una excepción acá haría
+        # perder todas las órdenes del DT en esta llamada
+        if not isinstance(kickers, (list, tuple)) or len(kickers) != PENALTIES_PER_TEAM:
+            return
+        if not all(_check_input_penalty(kicker) for kicker in kickers):
+            return
+        pairs = tuple((str(player), str(behavior)) for player, behavior in kickers)
+        self._orders.append(PenaltyOrder(pairs))
+
+    def run(
+        self, snapshot: CoachSnapshot
+    ) -> list[CoachOrder]:  ## SE Ejecuta 1 vez por tick para ver que quiere hacer el DT
+        self._snapshot = snapshot
+        self._orders = []
+        self._players_ordered = set()
+        self._substituted = False
+        self._penalty_ordered = False
+        if self._decide is None:
+            return []
+        try:
+            self._decide()
+        except MemoryError:
+            raise  # para que no me lo coma el except Exception
+        except Exception:
+            logger.exception("El DT de %s falló en decide_coach()", self._side)
+            return []  # las órdenes anotadas antes del error no se aplican
+        return self._orders
+
+
+def load_coach_brain(
+    side: Side, code: str
+) -> CoachBrain | None:  ##para cargar un nuevo dt.
+    try:
+        compiled_code = compile_behavior(code, f"coach {side}")
+    except InvalidBehaviorCode:
+        logger.exception("El DT de %s no compila", side)
+        return None
+    return CoachBrain(side, compiled_code)
 
 
 def create_brains(state: MatchState, codes: dict[str, str]) -> dict[str, PlayerBrain]:
@@ -212,12 +425,10 @@ def create_brains(state: MatchState, codes: dict[str, str]) -> dict[str, PlayerB
         code = codes.get(player.id)
         if code is None:
             continue
-        try:
-            compiled_code = compile_behavior(code, player.id)
-        except InvalidBehaviorCode:
-            logger.exception("El comportamiento del jugador %s no compila", player.id)
-            continue
-        brains[player.id] = PlayerBrain(player, compiled_code)
+        brain = load_brain(player, code)
+        # si no compila que quede con el brain viejo
+        if brain is not None:
+            brains[player.id] = brain
     return brains
 
 

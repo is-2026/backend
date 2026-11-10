@@ -7,8 +7,11 @@ from app.engine.constants import (
     FIELD_HALF_LENGTH,
     FIELD_HALF_WIDTH,
     SPEED_MAX_RANGE,
+    TRIANGLE_HOME,
 )
-from app.engine.engine import _scale, step
+from app.engine.engine import _scale, change_player, kickoff, step
+from app.engine.state import Side
+from tests.engine.conftest import make_player
 
 
 def test_scale_maps_min_and_max():
@@ -58,11 +61,11 @@ def test_borders(state, rng, initial_x, initial_y, dx, dy, expected_x, expected_
 def test_pct_speed(state, rng):
     player1, player2 = state.players[0], state.players[1]
     player1.x, player1.y = 0.0, 0.0
-    player2.x, player2.y = 0.0, 0.0
+    player2.x, player2.y = 10.0, 0.0
 
     step(state, {player1.id: Move(1, 1, 100), player2.id: Move(1, 1, 150)}, rng)
 
-    assert player1.x == pytest.approx(player2.x)
+    assert player1.x == pytest.approx(player2.x - 10)
     assert player1.y == pytest.approx(player2.y)
 
 
@@ -74,3 +77,21 @@ def test_negative_pct_does_not_move(state, rng):
 
     assert player.x == x_before
     assert player.y == y_before
+
+
+def test_change_player(state):
+    player_out = state.players[1]
+    player_in = make_player("h5", Side.HOME)
+
+    change_player(state, player_out.id, player_in)
+
+    assert [p.id for p in state.players] == ["h1", "h5", "h3", "a1", "a2", "a3"]
+    assert state.players[1].x == player_out.x
+    assert state.players[1].y == player_out.y
+
+    state.players[1].x = 0
+    state.players[1].y = 0
+
+    kickoff(state)
+
+    assert (state.players[1].x, state.players[1].y) == TRIANGLE_HOME[1]

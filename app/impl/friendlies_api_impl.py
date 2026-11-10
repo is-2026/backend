@@ -18,7 +18,9 @@ from app.ws.lobby_friendly import friendly_start_times
 
 
 INTERNAL_ERROR = 1011
-LOBBY_WINDOW_SECONDS = 30
+# pausa corta antes de friendlyStart: no es 0 porque el que se une recién se conecta
+# al lobby después de la respuesta del join, y sin pausa no recibiría friendlyStart
+LOBBY_WINDOW_SECONDS = 3
 _background_tasks : set[asyncio.Task] = set()  #guarda la referencia a los timers, se agrega al set para que asyncio no lo borre antes
 
 
@@ -46,13 +48,17 @@ class FriendliesApiImpl(BaseFriendliesApi):
         self._window = window_seconds
 
 
-    async def list_friendlies(self) -> list[Friendly]:
+    async def list_friendlies(self, club_name: str | None = None) -> list[Friendly]:
         repo = FriendlyRepository(self._session)
-        friendlies = await repo.list_available_friendlies()
+        friendlies = await repo.list_available_friendlies(club_name=club_name)
+        if not friendlies:
+            return []
+        names = await repo.get_club_names([f.creator_club_id for f in friendlies])
         return [
             Friendly(
                 id=f.id,
                 creator_club_id=f.creator_club_id,
+                creator_club_name=names.get(f.creator_club_id),
                 rival_club_id=f.rival_club_id,
                 is_private=repo.is_private(f),
                 status=f.status,
@@ -90,7 +96,8 @@ class FriendliesApiImpl(BaseFriendliesApi):
             friendly = await FriendlyRepository(self._session).create(
                 creator_club_id=creator_club_id, 
                 hashed_password=hashed_passw,
-                players= data_players
+                players= data_players,
+                formation=create_friendly_input.formation.value,
 
             )
 
@@ -98,10 +105,13 @@ class FriendliesApiImpl(BaseFriendliesApi):
             raise HTTPException(status_code=400, 
                                 detail="La convocatoria no es valida (jugadores repetidos/inexistentes)"
                                 ) from exc_info
-        
+
+        repo = FriendlyRepository(self._session)
+        creator_name = await repo.get_club_name(creator_club_id)
         return Friendly(
             id= friendly.id,
             creator_club_id= friendly.creator_club_id,
+            creator_club_name= creator_name,
             rival_club_id = None,
             is_private= hashed_passw is not None,
             status= friendly.status,
@@ -148,7 +158,9 @@ class FriendliesApiImpl(BaseFriendliesApi):
         ]
 
         try: 
-            friendly, match = await repo.accept(friendly_id, club_id, data_players) #repo.accept hace todo en una transaccion
+            friendly, match = await repo.accept(
+                friendly_id, club_id, data_players, join_friendly_input.formation.value
+            ) #repo.accept hace todo en una transaccion
         except FriendlyUnavailable as exc_info:        # por si los 2 usuarios llegan a la vez
             raise HTTPException(status_code=409, 
                                 detail="El amistoso ya no se encuentra disponible") from exc_info
@@ -158,6 +170,7 @@ class FriendliesApiImpl(BaseFriendliesApi):
                                 ) from exc_info
         
         club = await repo.get_club_name(club_id)
+        creator_name = await repo.get_club_name(friendly.creator_club_id)
         starts_at = datetime.now(timezone.utc) + timedelta(seconds=self._window)
         friendly_start_times[friendly_id] = starts_at  # para el que entra al lobby después (el rival)
         await self._lobby.broadcast(friendly_id, {#broadcast envia FriendlyClubRegistered a los q esten en el lobby del amistoso
@@ -173,13 +186,14 @@ class FriendliesApiImpl(BaseFriendliesApi):
         return Friendly(
             id=friendly.id,
             creator_club_id=friendly.creator_club_id,
+            creator_club_name=creator_name,
             rival_club_id= club_id,
             is_private= friendly.hashed_password is not None,
             status= friendly.status,
             match_id= match.id
         )
 
-    def _schedule_start(  #Lanza la pantalla de 30s en 2do plano y vuelve para crear el partido, y que no espere 30s el front para la respuesta
+    def _schedule_start(  #Lanza la espera del lobby en 2do plano y vuelve, para que el front no espere esa pausa para la respuesta
                         self, 
                         friendly_id : uuid.UUID, 
                         match_id: uuid.UUID) -> None:

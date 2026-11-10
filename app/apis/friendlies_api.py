@@ -22,7 +22,7 @@ from fastapi import (  # noqa: F401
     status,
 )
 
-from typing import Any, List
+from typing import Any, List, Optional
 from uuid import UUID
 from app.models.create_friendly_input import CreateFriendlyInput
 from app.models.error import Error
@@ -55,6 +55,11 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
     response_model_by_alias=True,
 )
 async def list_friendlies(
+    club_name: Optional[str] = Query(
+        None,
+        description="Devuelve solo los amistosos de clubes creadores cuyo nombre contiene este texto, sin distinguir mayúsculas.",
+        alias="club_name",
+    ),
     token_bearerAuth: TokenModel = Security(
         get_token_bearerAuth
     ),
@@ -64,7 +69,7 @@ async def list_friendlies(
     """Devuelve una lista de amistosos que están esperando rival, incluyendo públicos y privados."""
     if not BaseFriendliesApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseFriendliesApi.subclasses[0](session, lobby).list_friendlies()
+    return await BaseFriendliesApi.subclasses[0](session, lobby).list_friendlies(club_name)
 
 
 @router.post(

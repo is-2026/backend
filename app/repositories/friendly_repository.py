@@ -41,8 +41,17 @@ class FriendlyRepository:
         # true si hay una contraseña guardada, false si es None
         return bool(friendly.hashed_password)
 
-    async def list_available_friendlies(self) -> list[FriendlyDB]:
+    async def list_available_friendlies(
+        self, club_name: str | None = None
+    ) -> list[FriendlyDB]:
         consult = select(FriendlyDB).where(FriendlyDB.status == "waiting_for_rival")
+        # si llego un club_name, lo usamos para buscar (join con clubs)
+        # ojo: ILIKE de SQL hace pattern matching con la palabra completa (case insensitive).
+        # si club_name="boca", "boca unidos" matchea, "bocado club" no.
+        if club_name is not None:
+            consult = consult.join(
+                ClubDB, FriendlyDB.creator_club_id == ClubDB.id
+            ).where(ClubDB.club_name.ilike(f"%{club_name}%"))
         result = await self._session.execute(consult)
         return list(result.scalars().all())
 
@@ -50,12 +59,14 @@ class FriendlyRepository:
                     self,
                     creator_club_id: uuid.UUID,
                     hashed_password : str | None,
-                    players: list[SquadPlayerData]
+                    players: list[SquadPlayerData],
+                    formation: str,
                     )-> FriendlyDB:
         friendly = FriendlyDB(
                             id=uuid.uuid4(),
                             creator_club_id= creator_club_id,
                             hashed_password = hashed_password,
+                            creator_formation=formation,
                             )
         self._session.add(friendly)
         await self._session.flush() #hago flush para q exista el friendly.id antes de crear jugadores
@@ -90,11 +101,19 @@ class FriendlyRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_club_names(self, club_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+        # una sola consulta para todos los clubes, en vez de una por amistoso
+        result = await self._session.execute(
+            select(ClubDB.id, ClubDB.club_name).where(ClubDB.id.in_(club_ids))
+        )
+        return dict(result.all())
+
     async def accept(
                     self,
                     friendly_id: uuid.UUID,
                     rival_club_id: uuid.UUID,
-                    players: list[SquadPlayerData]
+                    players: list[SquadPlayerData],
+                    formation: str,
                     ) -> tuple[FriendlyDB, MatchDB]:
         result = await self._session.execute(
             select(FriendlyDB)
@@ -116,6 +135,7 @@ class FriendlyRepository:
         await self._session.flush()  # el partido tiene que existir antes de setear friendly.match_id (FK)
 
         friendly.rival_club_id = rival_club_id
+        friendly.rival_formation = formation
         friendly.status = "accepted"
         friendly.match_id = match.id
 
@@ -152,3 +172,13 @@ class FriendlyRepository:
             .order_by(FriendlyPlayerDB.is_starter.desc(), PlayerDB.number)
         )
         return [SquadMember(*row) for row in result.all()]
+
+    async def get_formations_by_match(self, match_id: uuid.UUID) -> tuple[str, str]:
+        """(formación del local, formación del visitante) del amistoso de ese partido.
+        El creador es el local y el rival el visitante (ver accept)."""
+        result = await self._session.execute(
+            select(FriendlyDB.creator_formation, FriendlyDB.rival_formation)
+            .where(FriendlyDB.match_id == match_id)
+        )
+        row = result.one()
+        return row.creator_formation, row.rival_formation

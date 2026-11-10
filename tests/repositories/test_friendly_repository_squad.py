@@ -71,3 +71,18 @@ async def test_get_squad_by_match(session):
 
 async def test_get_squad_by_unknown_match_is_empty(session):
     assert await FriendlyRepository(session).get_squad_by_match(uuid.uuid4()) == []
+
+
+async def test_get_formations_by_match(session):
+    creator, _ = await make_club(session, "local")
+    rival, _ = await make_club(session, "visita")
+    repo = FriendlyRepository(session)
+
+    friendly = await repo.create(creator, None, [], "OFFENSIVE_LINE")
+    _, match = await repo.accept(friendly.id, rival, [], "DEFENSIVE_LINE")
+
+    # el creador es el local y el rival el visitante
+    assert await repo.get_formations_by_match(match.id) == (
+        "OFFENSIVE_LINE",
+        "DEFENSIVE_LINE",
+    )
