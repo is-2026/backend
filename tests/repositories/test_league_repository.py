@@ -287,6 +287,35 @@ async def test_add_enrollment(session):
     assert clubs[0].id == club_id
 
 
+async def test_create_with_enrollment_saves_formation(session):
+    club_id = await make_club(session)
+    squad = await make_squad(session, club_id)
+    repo = LeagueRepository(session)
+
+    league = await repo.create_with_enrollment(
+        name="Liga",
+        hashed_password=None,
+        max_clubs=5,
+        match_duration_minutes=10,
+        club_id=club_id,
+        squadPlayer=squad,
+        formation="OFFENSIVE_LINE",
+    )
+
+    assert (await repo.get_enrollment(league.id, club_id)).formation == "OFFENSIVE_LINE"
+
+
+async def test_add_enrollment_saves_formation(session):
+    club_id = await make_club(session)
+    league_id = await add_league(session, club_id, "liga", "not_started")
+    squad = await make_squad(session, club_id)
+    repo = LeagueRepository(session)
+
+    await repo.add_enrollment(league_id, club_id, squad, "DEFENSIVE_LINE")
+
+    assert (await repo.get_enrollment(league_id, club_id)).formation == "DEFENSIVE_LINE"
+
+
 async def test_add_enrollment_already_enrolled(session):
     # creamos club, liga y equipo
     club_id = await make_club(session)

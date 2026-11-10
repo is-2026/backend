@@ -129,6 +129,18 @@ async def test_create_league_public(api, mocks):
     )
 
 
+async def test_create_league_saves_formation(api, mocks):
+    data = make_create_league_input()
+    data.formation = "DEFENSIVE_LINE"
+
+    await api.create_league(data, CLUB)
+
+    assert (
+        mocks.league_repo.create_with_enrollment.await_args.kwargs["formation"]
+        == "DEFENSIVE_LINE"
+    )
+
+
 async def test_create_league_private(api, mocks):
     mocks.league_repo.create_with_enrollment.return_value.hashed_password = "hashed"
 
@@ -769,6 +781,20 @@ async def test_join_league_public_endpoint(api, mocks):
 
     # verificamos que se haya intentado añadir la inscripcion
     mocks.league_repo.add_enrollment.assert_awaited_once()
+
+
+async def test_join_league_saves_formation(api, mocks):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = SimpleNamespace(
+        id=league_id, name="Liga", hashed_password=None, max_clubs=5, status="not_started"
+    )
+    mocks.league_repo.list_clubs_of_league.return_value = []
+    data = make_join_league_input()
+    data.formation = "OFFENSIVE_LINE"
+
+    await api.join_league(league_id, data, CLUB)
+
+    assert mocks.league_repo.add_enrollment.await_args.kwargs["formation"] == "OFFENSIVE_LINE"
 
 
 async def test_join_league_private_wrong_password(api, mocks):
