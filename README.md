@@ -74,10 +74,12 @@ La base de desarrollo no se modifica.
 
 Cada cambio en los modelos de `app/db/` necesita una migración.
 
+Las pendientes se aplican solas cada vez que arranca el contenedor del backend (`docker compose up` o `docker compose restart backend`). Si fallan, el backend no arranca y el error aparece en `docker compose logs backend`.
+
 Ver en qué migración está la base: `docker compose exec backend alembic current` 
 
 Ver la última migración del código: `docker compose exec backend alembic heads` 
 
 Generar una migración: `docker compose exec backend alembic revision --autogenerate -m "mensaje"` 
  
-Aplicar las pendientes: `docker compose exec backend alembic upgrade head` 
+Aplicar las pendientes sin reiniciar (por ejemplo, después de un `git pull` con el backend levantado): `docker compose exec backend alembic upgrade head` 
