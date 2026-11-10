@@ -176,8 +176,20 @@ class LeaguesApiImpl(BaseLeaguesApi):
         repoliga = LeagueRepository(self._session)
 
         league = await repoliga.get(league_id)  # Busco la liga por id
-        if league is None or league.status != "not_started":
+        if league is None:
             raise HTTPException(status_code=404, detail="La liga no existe")
+
+        # fecha en juego: la menor fecha con partidos sin terminar (null si no está iniciada)
+        current_round = None
+        if league.status == "started":
+            matches = await MatchRepository(self._session).list_by_league(league.id)
+            pendientes = [
+                m.round_number for m in matches if m.status != MatchStatus.finished
+            ]
+            if pendientes:
+                current_round = min(pendientes)
+            elif matches:  # todos terminados pero la liga todavía no pasó a finished
+                current_round = max(m.round_number for m in matches)
 
         clubs = await repoliga.list_clubs_of_league(league.id)
 
@@ -194,7 +206,9 @@ class LeaguesApiImpl(BaseLeaguesApi):
             max_clubs=league.max_clubs,
             status=league.status,
             creator_club_id=league.creator_club_id,
+            match_duration_minutes=league.match_duration_minutes,
             allows_draws=league.allows_draws,
+            current_round=current_round,
             registered_clubs=registered,
         )
 
