@@ -1,7 +1,8 @@
-import uuid, enum
+import enum
+import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Enum, UniqueConstraint
+from sqlalchemy import Enum, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -38,6 +39,9 @@ class MatchDB(Base):
         )
     home_score: Mapped[int | None]
     away_score: Mapped[int | None]
+    # penales convertidos en la tanda, null si no se definió por penales
+    home_penalties: Mapped[int | None]
+    away_penalties: Mapped[int | None]
     league_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("leagues.id"),
         default=None,

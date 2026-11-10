@@ -30,8 +30,8 @@ from app.models.change_live_behavior_request import ChangeLiveBehaviorRequest
 from app.models.error import Error
 from app.models.extra_models import TokenModel  # noqa: F401
 from app.models.match import Match
+from app.models.penalty_order_input import PenaltyOrderInput
 from app.models.schedule_substitution_input import ScheduleSubstitutionInput
-from app.models.submit_lineup_input import SubmitLineupInput
 from app.models.substitution import Substitution
 from app.security_api import get_token_bearerAuth
 
@@ -67,41 +67,6 @@ async def get_match(
     if not BaseMatchApi.subclasses:
         raise HTTPException(status_code=500, detail="Not implemented")
     return await BaseMatchApi.subclasses[0](session).get_match(match_id)
-
-
-@router.post(
-    "/matches/{match_id}/lineup",
-    responses={
-        200: {"model": Match, "description": "Alineación registrada"},
-        400: {
-            "model": Error,
-            "description": "Alguno de los jugadores no pertenece al pool de convocados, o no se enviaron exactamente 3 titulares y 3 suplentes.",
-        },
-        401: {
-            "model": Error,
-            "description": "No se proporcionó un token, o el token es inválido o expiró",
-        },
-        404: {"model": Error, "description": "Recurso no encontrado"},
-    },
-    tags=["Match"],
-    summary="Definir nuevos titulares, sus comportamientos y la formación antes de jugar el partido.",
-    response_model_by_alias=True,
-)
-async def set_lineup(
-    match_id: UUID = Path(..., description=""),
-    submit_lineup_input: SubmitLineupInput = Body(..., description=""),
-    token_bearerAuth: TokenModel = Security(get_token_bearerAuth),
-) -> Match:
-    """Ventana de 30 segundos antes de cada partido (liga y amistoso).
-    Los jugadores incluidos deben pertenecer al pool de convocados de la inscripción
-    (liga) o el desafío/búsqueda (amistoso) correspondiente. Si no se completa a tiempo,
-    el sistema asigna automáticamente los titulares/suplentes por defecto enviados al
-    momento de inscribirse, los 3 comportamientos asignados a los jugadores por defecto,
-    y la formación default del club.
-    """
-    if not BaseMatchApi.subclasses:
-        raise HTTPException(status_code=500, detail="Not implemented")
-    return await BaseMatchApi.subclasses[0]().set_lineup(match_id, submit_lineup_input)
 
 
 @router.patch(
@@ -217,4 +182,42 @@ async def unschedule_substitution(
         raise HTTPException(status_code=500, detail="Not implemented")
     return await BaseMatchApi.subclasses[0](session).unschedule_substitution(
         match_id, club.id
+    )
+
+
+@router.put(
+    "/matches/{match_id}/penalty-order",
+    responses={
+        200: {"description": "Orden de pateadores registrado"},
+        400: {
+            "model": Error,
+            "description": "No son 5 pateadores, hay repetidos, algún jugador no es de los 6 convocados del club, o un comportamiento no es propio o es de tipo DT",
+        },
+        401: {
+            "model": Error,
+            "description": "No se proporcionó un token, o el token es inválido o expiró",
+        },
+        403: {
+            "model": Error,
+            "description": "El club del usuario no juega ese partido",
+        },
+        404: {"model": Error, "description": "El partido no está en juego"},
+        409: {"model": Error, "description": "No hay una ventana de penales abierta"},
+    },
+    tags=["Match"],
+    summary="Elegir los pateadores de la tanda de penales",
+    response_model_by_alias=True,
+)
+async def set_penalty_order(
+    match_id: UUID = Path(..., description=""),
+    penalty_order_input: PenaltyOrderInput = Body(..., description=""),
+    club: ClubDB = Security(get_current_club),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Solo durante la ventana de 30 s que se abre cuando un partido de una liga sin
+    empates termina igualado. Si el club no elige, patean los 3 en cancha por número."""
+    if not BaseMatchApi.subclasses:
+        raise HTTPException(status_code=500, detail="Not implemented")
+    return await BaseMatchApi.subclasses[0](session).set_penalty_order(
+        match_id, penalty_order_input, club.id
     )

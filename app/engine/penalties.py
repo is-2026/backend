@@ -1,14 +1,21 @@
 import random
 from dataclasses import replace
+from math import hypot
 
+from app.engine.actions import Action, Move, Shoot
 from app.engine.constants import (
+    GOAL_HALF_WIDTH,
+    GOALIE_CORRECTION_SPEED_PCT,
     GOALIE_FORMATION,
+    GOALIE_LINE_X,
+    GOALIE_REACTION_DISTANCE,
+    GOALIE_STOP_DISTANCE,
     KICKER_FORMATION,
     MAX_PENALTIES,
     PENALTIES_PER_TEAM,
     PENALTY_TICKS,
 )
-from app.engine.engine import kickoff
+from app.engine.engine import control_radius, kickoff
 from app.engine.events import GoalEvent
 from app.engine.state import MatchState, PlayerState, Side
 
@@ -53,6 +60,36 @@ def kick_stopped(state: MatchState, goalie: PlayerState) -> bool:
         or (state.ball.x < 0 if goalie.side == Side.AWAY else state.ball.x > 0)
         or state.tick >= state.total_ticks
     )
+
+
+class Goalie:
+    """El arquero de la tanda: lo maneja el sistema, no el comportamiento del jugador.
+    Cuando rematan se tira a un palo elegido al azar y, cuando la pelota se le acerca,
+    va hacia ella para corregir si eligió mal. Si le llega a su radio, la despeja."""
+
+    def __init__(self, player: PlayerState, rng: random.Random):
+        self._id = player.id
+        # el local defiende el arco de -x y el visitante el de +x
+        self._sign = 1 if player.side == Side.HOME else -1
+        self._dive_y = rng.choice((-GOAL_HALF_WIDTH, GOAL_HALF_WIDTH))
+
+    def action(self, state: MatchState) -> Action:
+        me = next(p for p in state.players if p.id == self._id)
+        ball = state.ball
+        distance = hypot(ball.x - me.x, ball.y - me.y)
+        if distance <= control_radius(me.control):
+            return Shoot(self._sign, 0.0, 100)  # la despeja hacia la mitad del pateador
+        if ball.last_touch_id is None:
+            return Move(0.0, 0.0, 0)  # todavía no remataron
+        if distance <= GOALIE_REACTION_DISTANCE:
+            # la ve venir: corrige hacia la pelota, más lento
+            target_y, speed = ball.y, GOALIE_CORRECTION_SPEED_PCT
+        else:
+            target_y, speed = self._dive_y, 100  # se tira al palo que eligió
+        dx, dy = self._sign * GOALIE_LINE_X - me.x, target_y - me.y
+        if hypot(dx, dy) <= GOALIE_STOP_DISTANCE:
+            return Move(0.0, 0.0, 0)  # ya llegó: se queda quieto, como el Defensor
+        return Move(dx, dy, speed)
 
 
 class Shootout:

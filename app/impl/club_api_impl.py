@@ -11,6 +11,9 @@ from app.models.change_coach_input import ChangeCoachInput
 from app.models.create_club_input import CreateClubInput
 from app.repositories.club_repository import ClubAlreadyExists, ClubRepository
 from app.repositories.behavior_repository import BehaviorRepository
+from app.impl.ranking_api_impl import sort_standings
+from app.models.club_profile import ClubProfile
+from app.repositories.league_repository import ClubRankingTotals, LeagueRepository
 
 CLUB_NAME_MAX_LENGTH = 50
 AVATAR_URL_MAX_LENGTH = 512
@@ -113,4 +116,42 @@ class ClubApiImpl(BaseClubApi):
             user_id=club.user_id,
             created_at=club.created_at,
             coach_behavior_id=club.coach_behavior_id,
+        )
+
+    async def get_club(self, club_id: uuid.UUID) -> ClubProfile:
+        club = await ClubRepository(self._session).get_by_id(club_id)
+        if club is None:
+            raise HTTPException(status_code=404, detail="El club no existe")
+
+        # traer informacion del GET /ranking y buscamos la fila del club
+        totals = await LeagueRepository(self._session).list_ranking_totals()
+        ordered = sort_standings(totals)
+
+        # el club aun no participo en ligas publicas
+        stats = ClubRankingTotals(
+            club_id=club.id, club_name=club.club_name, avatar_url=club.avatar_url,
+            points=0, matches_played=0, won=0, won_penalties=0, drawn=0,
+            lost=0, goals_for=0, goals_against=0,
+        )
+        ranking_position = None
+        for position, row in enumerate(ordered, start=1):
+            if row.club_id == club.id:
+                ranking_position = position
+                stats = row
+                break
+
+        return ClubProfile(
+            id=club.id,
+            club_name=club.club_name,
+            avatar_url=club.avatar_url,
+            created_at=club.created_at,
+            ranking_position=ranking_position,
+            points=stats.points,
+            matches_played=stats.matches_played,
+            won=stats.won,
+            won_penalties=stats.won_penalties,
+            drawn=stats.drawn,
+            lost=stats.lost,
+            goals_for=stats.goals_for,
+            goals_against=stats.goals_against,
         )

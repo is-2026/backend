@@ -1,4 +1,5 @@
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, select
@@ -12,6 +13,7 @@ from app.db.league import LeagueDB, LeagueEnrollmentDB, LeagueEnrollmentPlayerDB
 from app.db.player import PlayerDB
 from app.db.user import UserDB
 from app.repositories.league_repository import (
+    _apply_score,
     LeagueRepository,
     SquadPlayerData,
     ClubAlreadyEnrolled,
@@ -567,6 +569,30 @@ async def test_update_standings_and_finish_league(session, session_factory):
     assert (arsenal.points, arsenal.matches_played, arsenal.won, arsenal.drawn, arsenal.lost, arsenal.goals_for, arsenal.goals_against, arsenal.goals_dif) == (1, 2, 0, 1, 1, 1, 3, -2)
 
 
+@pytest.mark.parametrize(
+    "goals_for, goals_against, won_shootout, points, result",
+    [
+        (2, 1, None, 3, "won"),
+        (1, 1, None, 1, "drawn"),
+        (0, 1, None, 0, "lost"),
+        (1, 1, True, 2, "won_penalties"),
+        (1, 1, False, 0, "lost"),
+    ],
+)
+def test_apply_score(goals_for, goals_against, won_shootout, points, result):
+    row = SimpleNamespace(
+        matches_played=0, goals_for=0, goals_against=0, goals_dif=0,
+        won=0, won_penalties=0, drawn=0, lost=0, points=0,
+    )
+
+    _apply_score(row, goals_for, goals_against, won_shootout)
+
+    assert row.points == points
+    assert getattr(row, result) == 1
+    assert row.won + row.won_penalties + row.drawn + row.lost == 1
+    assert (row.goals_for, row.goals_against) == (goals_for, goals_against)
+
+
 # chequeamos el ordenamiento segun los criterios de desempate
 async def test_get_standings_orders_by_points_goals_dif_goals_for_and_club_name(
     session,
@@ -672,3 +698,29 @@ async def test_get_standings_orders_by_points_goals_dif_goals_for_and_club_name(
         c_alpha,
         c_epsilon,
     ]
+
+
+async def test_update_lineup(session):
+    club_id = await make_club(session)
+    league_id = await add_league(session, club_id, "liga", "started")
+    squad = await make_squad(session, club_id)
+    repo = LeagueRepository(session)
+    await repo.add_enrollment(league_id, club_id, squad)
+    enrollment = await repo.get_enrollment(league_id, club_id)
+
+    # invertimos: los titulares pasan al banco y los suplentes entran con los comportamientos
+    behavior_ids = [sp.behavior_id for sp in squad[:3]]
+    new_squad = [SquadPlayerData(sp.player_id, False) for sp in squad[:3]] + [
+        SquadPlayerData(sp.player_id, True, behavior_ids[i])
+        for i, sp in enumerate(squad[3:])
+    ]
+    await repo.update_lineup(enrollment, "OFFENSIVE_LINE", new_squad)
+
+    enrollment = await repo.get_enrollment(league_id, club_id)
+    assert enrollment.formation == "OFFENSIVE_LINE"
+
+    players = await repo.list_enrollment_players(enrollment.id)
+    by_id = {p.player_id: p for p in players}
+    for sp in new_squad:
+        assert by_id[sp.player_id].is_starter == sp.is_starter
+        assert by_id[sp.player_id].behavior_id == sp.behavior_id  # suplentes sin comportamiento

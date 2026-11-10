@@ -277,6 +277,175 @@ async def test_change_live_behavior_player_not_field(client, club, live, sent, b
     assert (result.json()["message"] == "El jugador no se encuentra en cancha del lado del club"
 )
 
+
+# --- PUT /matches/{match_id}/penalty-order ---
+SQUAD = [ON_FIELD, ON_BENCH, *(str(uuid.uuid4()) for _ in range(4))]
+
+
+@pytest.fixture
+def penalty_window(live):
+    """La ventana de penales abierta, con los 6 convocados del local."""
+    live.info.home_lineup = [
+        lineup_player(player_id, n, n <= 3) for n, player_id in enumerate(SQUAD, start=1)
+    ]
+    live.phase = Phase.PENALTIES
+    return live
+
+
+@pytest.fixture
+def penalty_behavior_calls(live, monkeypatch):
+    """Registra las llamadas a executor.set_player_behavior sin mandar nada al hijo."""
+    calls = []
+
+    def fake_set_player_behavior(player, code):
+        calls.append((player.id, code))
+
+    monkeypatch.setattr(live.executor, "set_player_behavior", fake_set_player_behavior)
+    return calls
+
+
+def penalty_url(match_id) -> str:
+    return f"/matches/{match_id}/penalty-order"
+
+
+def penalty_body(club, player_ids=SQUAD[:5], behavior_id=None) -> dict:
+    behavior_id = behavior_id or str(club[1].id)
+    return {
+        "kickers": [{"player_id": p, "behavior_id": behavior_id} for p in player_ids]
+    }
+
+
+async def test_put_penalty_order_saves_it_and_loads_the_behaviors(
+    client, club, penalty_window, penalty_behavior_calls
+):
+    order = [SQUAD[5], SQUAD[4], SQUAD[0], SQUAD[1], SQUAD[2]]  # con dos suplentes
+
+    result = await client.put(
+        penalty_url(penalty_window.match_id),
+        json=penalty_body(club, order),
+        headers=auth_header(club),
+    )
+
+    assert result.status_code == 200
+    kickers = penalty_window.penalty_orders[str(club[0].id)]
+    assert [k.id for k in kickers] == order
+    assert all(k.side == Side.HOME for k in kickers)
+    assert penalty_behavior_calls == [(p, club[1].code) for p in order]
+
+
+@pytest.mark.parametrize(
+    "player_ids",
+    [
+        SQUAD[:4],  # no son 5
+        [SQUAD[0], SQUAD[0], SQUAD[1], SQUAD[2], SQUAD[3]],  # repetidos
+        [*SQUAD[:4], str(uuid.uuid4())],  # uno no es convocado
+    ],
+)
+async def test_put_penalty_order_400_if_the_kickers_are_wrong(
+    client, club, penalty_window, penalty_behavior_calls, player_ids
+):
+    result = await client.put(
+        penalty_url(penalty_window.match_id),
+        json=penalty_body(club, player_ids),
+        headers=auth_header(club),
+    )
+
+    assert result.status_code == 400
+    assert penalty_window.penalty_orders == {}
+    assert penalty_behavior_calls == []
+
+
+@pytest.mark.parametrize("kind", ["ajeno", "coach"])
+async def test_put_penalty_order_400_if_a_behavior_is_not_own_or_is_of_coach(
+    client, club, session, penalty_window, penalty_behavior_calls, kind
+):
+    behavior_id = str(uuid.uuid4())  # no existe, o es de otro club
+    if kind == "coach":
+        coach = BehaviorDB(
+            name="DT", code="def decide_coach(): pass", club_id=club[0].id, kind="coach"
+        )
+        session.add(coach)
+        await session.commit()
+        behavior_id = str(coach.id)
+
+    result = await client.put(
+        penalty_url(penalty_window.match_id),
+        json=penalty_body(club, behavior_id=behavior_id),
+        headers=auth_header(club),
+    )
+
+    assert result.status_code == 400
+    assert penalty_window.penalty_orders == {}
+    assert penalty_behavior_calls == []  # no cargó ninguno a medias
+
+
+async def test_put_penalty_order_409_if_there_is_no_window(client, club, live):
+    result = await client.put(
+        penalty_url(live.match_id), json=penalty_body(club), headers=auth_header(club)
+    )
+
+    assert result.status_code == 409
+
+
+async def test_put_penalty_order_409_once_the_shootout_started(
+    client, club, penalty_window
+):
+    penalty_window.shootout = object()  # ya arrancó la tanda
+
+    result = await client.put(
+        penalty_url(penalty_window.match_id),
+        json=penalty_body(club),
+        headers=auth_header(club),
+    )
+
+    assert result.status_code == 409
+
+
+async def test_put_penalty_order_403_if_the_club_does_not_play(
+    client, club, penalty_window
+):
+    penalty_window.info.home_club.id = str(uuid.uuid4())
+
+    result = await client.put(
+        penalty_url(penalty_window.match_id),
+        json=penalty_body(club),
+        headers=auth_header(club),
+    )
+
+    assert result.status_code == 403
+
+
+async def test_put_penalty_order_404_if_the_match_is_not_being_played(client, club):
+    result = await client.put(
+        penalty_url(uuid.uuid4()), json=penalty_body(club), headers=auth_header(club)
+    )
+
+    assert result.status_code == 404
+
+
+# --- GET /matches/{match_id} ---
+
+
+async def test_get_match_returns_the_penalties(client, club, session):
+    # alcanza con un club de los dos lados para las FKs
+    match = MatchDB(
+        home_club_id=club[0].id,
+        away_club_id=club[0].id,
+        status=MatchStatus.finished,
+        home_score=1,
+        away_score=1,
+        home_penalties=4,
+        away_penalties=3,
+    )
+    session.add(match)
+    await session.commit()
+
+    r = await client.get(f"/matches/{match.id}", headers=auth_header(club))
+
+    assert r.status_code == 200
+    assert (r.json()["home_penalties"], r.json()["away_penalties"]) == (4, 3)
+
+
 async def test_get_match_returns_200_with_details(client, session, club):
     other_user_id = uuid.uuid4()
     other_club_id = uuid.uuid4()

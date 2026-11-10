@@ -19,21 +19,37 @@ import json
 
 
 
-
-from pydantic import BaseModel, ConfigDict
-from typing import Any, ClassVar, Dict, List
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
+from typing import Any, ClassVar, Dict, List, Optional
 from uuid import UUID
 try:
     from typing import Self
 except ImportError:
     from typing_extensions import Self
 
-class SubmitLineupInputSubstitutesInner(BaseModel):
+class ClubProfile(BaseModel):
     """
-    SubmitLineupInputSubstitutesInner
+    ClubProfile
     """ # noqa: E501
-    player_id: UUID
-    __properties: ClassVar[List[str]] = ["player_id"]
+    id: Optional[UUID] = None
+    club_name: Optional[StrictStr] = None
+    avatar_url: Optional[StrictStr] = None
+    created_at: Optional[datetime] = None
+    ranking_position: Optional[StrictInt] = None
+    points: Optional[StrictInt] = None
+    matches_played: Optional[StrictInt] = None
+    won: Optional[StrictInt] = None
+    won_penalties: Optional[StrictInt] = None
+    drawn: Optional[StrictInt] = None
+    lost: Optional[StrictInt] = None
+    goals_for: Optional[StrictInt] = None
+    goals_against: Optional[StrictInt] = None
+    __properties: ClassVar[List[str]] = [
+        "id", "club_name", "avatar_url", "created_at", "ranking_position",
+        "points", "matches_played", "won", "won_penalties", "drawn", "lost",
+        "goals_for", "goals_against",
+    ]
 
     model_config = {
         "populate_by_name": True,
@@ -53,7 +69,7 @@ class SubmitLineupInputSubstitutesInner(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:
-        """Create an instance of SubmitLineupInputSubstitutesInner from a JSON string"""
+        """Create an instance of ClubProfile from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -76,7 +92,7 @@ class SubmitLineupInputSubstitutesInner(BaseModel):
 
     @classmethod
     def from_dict(cls, obj: Dict) -> Self:
-        """Create an instance of SubmitLineupInputSubstitutesInner from a dict"""
+        """Create an instance of ClubProfile from a dict"""
         if obj is None:
             return None
 
@@ -84,7 +100,19 @@ class SubmitLineupInputSubstitutesInner(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "player_id": obj.get("player_id")
+            "id": obj.get("id"),
+            "club_name": obj.get("club_name"),
+            "avatar_url": obj.get("avatar_url"),
+            "created_at": obj.get("created_at"),
+            "ranking_position": obj.get("ranking_position"),
+            "points": obj.get("points"),
+            "matches_played": obj.get("matches_played"),
+            "won": obj.get("won"),
+            "won_penalties": obj.get("won_penalties"),
+            "drawn": obj.get("drawn"),
+            "lost": obj.get("lost"),
+            "goals_for": obj.get("goals_for"),
+            "goals_against": obj.get("goals_against"),
         })
         return _obj
 
