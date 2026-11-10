@@ -368,7 +368,27 @@ async def test_list_leagues_empty(api, mocks):
     result = await api.list_leagues()
 
     assert result == []
+    mocks.league_repo.list_not_started.assert_awaited_once_with(name=None)
     mocks.league_repo.list_clubs_of_league.assert_not_awaited()
+
+
+async def test_list_leagues_with_name_filter(api, mocks):
+    league = SimpleNamespace(
+        id=uuid.uuid4(),
+        name="Copa Argentina",
+        hashed_password=None,
+        max_clubs=5,
+        status="not_started",
+        allows_draws=True,
+    )
+    mocks.league_repo.list_not_started.return_value = [league]
+    mocks.league_repo.list_clubs_of_league.return_value = []
+
+    result = await api.list_leagues(name="copa")
+
+    mocks.league_repo.list_not_started.assert_awaited_once_with(name="copa")
+    assert len(result) == 1
+    assert result[0].name == "Copa Argentina"
 
 async def test_list_my_leagues(api, mocks):
     league = SimpleNamespace(
@@ -710,6 +730,26 @@ async def test_endpoint_list_leagues_empty(client, session, club):
 
     assert r.status_code == 200
     assert r.json() == []
+
+
+async def test_endpoint_list_leagues_filters_by_name_case_insensitive(
+    client, session, club
+):
+    await add_league(session, club, "copa del sur", "not_started")
+    await add_league(session, club, "Copa America", "not_started")
+    await add_league(session, club, "GRAN COPA", "not_started")
+    await add_league(session, club, "Torneo Clausura", "not_started")
+    await add_league(session, club, "Copa Iniciada", "started")
+    await add_league(session, club, "Copa Terminada", "finished")
+    await add_league(session, club, "Copa Cancelada", "cancelled")
+
+    r = await client.get(f"{URL}?name=copa", headers=auth_header(club))
+
+    assert r.status_code == 200
+    data = r.json()
+    names = {league["name"] for league in data}
+    assert names == {"copa del sur", "Copa America", "GRAN COPA"}
+    assert all(league["status"] == "not_started" for league in data)
 
 
 async def test_endpoint_list_leagues_without_token_returns_401(client, session):

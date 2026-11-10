@@ -126,9 +126,10 @@ class LeaguesApiImpl(BaseLeaguesApi):
             registered_clubs=[{"club_id": club_id.id, "club_name": club_id.club_name}],
         )
 
-    async def list_leagues(self) -> list[LeagueDetail]:
+    async def list_leagues(self, name: str | None = None) -> list[LeagueDetail]:
         repo = LeagueRepository(self._session)
-        leagues = await repo.list_not_started()
+        # manda name (None si no hay query param)
+        leagues = await repo.list_not_started(name=name)
 
         result = []
         for league in leagues:

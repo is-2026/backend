@@ -245,6 +245,22 @@ async def test_list_not_started_only_returns_not_started(session):
     assert "iniciada" not in names
     assert "terminada" not in names
 
+#tantos torneos chiquimafia
+async def test_list_not_started_filters_by_name_case_insensitive(session):
+    club_id = await make_club(session)
+    await add_league(session, club_id, "copa de verano", "not_started")
+    await add_league(session, club_id, "Copa Libertadores", "not_started")
+    await add_league(session, club_id, "SUPER COPA", "not_started")
+    await add_league(session, club_id, "Torneo Apertura", "not_started")
+    await add_league(session, club_id, "Copa Iniciada", "started")
+    await add_league(session, club_id, "Copa Terminada", "finished")
+    await add_league(session, club_id, "Copa Cancelada", "cancelled")
+
+    result = await LeagueRepository(session).list_not_started(name="copa")
+
+    names = {league.name for league in result}
+    assert names == {"copa de verano", "Copa Libertadores", "SUPER COPA"}
+
 
 async def test_list_clubs_of_league(session):
     club_id = await make_club(session)
