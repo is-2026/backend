@@ -252,6 +252,7 @@ async def test_get_league_public(api, mocks):
         name="LPF chiqui Mafia",
         hashed_password=None,
         max_clubs=5,
+        match_duration_minutes=10,
         status="not_started",
         allows_draws=True,
         creator_club_id=CLUB.id,
@@ -267,6 +268,9 @@ async def test_get_league_public(api, mocks):
     assert result.name == "LPF chiqui Mafia"
     assert result.is_private is False
     assert result.status == "not_started"
+    assert result.match_duration_minutes == 10
+    assert result.current_round is None  # no iniciada
+    assert result.registered_clubs[0].club_id == club.id
     assert result.registered_clubs[0].club_name == "River Plate"
     assert result.creator_club_id == CLUB.id
 
@@ -279,6 +283,7 @@ async def test_get_league_private(api, mocks):
         name="LPF chiqui Mafia",
         hashed_password="password",
         max_clubs=5,
+        match_duration_minutes=10,
         status="not_started",
         allows_draws=True,
         creator_club_id=CLUB.id,
@@ -296,23 +301,102 @@ async def test_get_league_private(api, mocks):
     assert result.registered_clubs[0].club_name == "River Plate"
 
 
-@pytest.mark.parametrize("status", ["started", "finished"])
-async def test_get_league_not_available(api, mocks, status):
-    league = SimpleNamespace(
+def make_league_detail(status):
+    return SimpleNamespace(
         id=uuid.uuid4(),
         name="LPF chiqui Mafia",
-        hashed_password="password",
+        hashed_password=None,
         max_clubs=5,
+        match_duration_minutes=10,
         status=status,
         allows_draws=True,
+        creator_club_id=CLUB.id,
     )
 
+
+def make_match(round_number, status):
+    return SimpleNamespace(round_number=round_number, status=status)
+
+
+@pytest.mark.parametrize("status", ["not_started", "started", "finished", "cancelled"])
+async def test_get_league_any_status(api, mocks, status):
+    league = make_league_detail(status)
     mocks.league_repo.get.return_value = league
+    mocks.league_repo.list_clubs_of_league.return_value = [CLUB]
+    mocks.match_repo.list_by_league.return_value = []
+
+    result = await api.get_league(league.id)
+
+    assert result.id == league.id
+    assert result.status == status
+    assert result.registered_clubs[0].club_id == CLUB.id
+
+
+@pytest.mark.parametrize("status", ["not_started", "finished", "cancelled"])
+async def test_get_league_current_round_null_if_not_started(api, mocks, status):
+    league = make_league_detail(status)
+    mocks.league_repo.get.return_value = league
+    mocks.league_repo.list_clubs_of_league.return_value = [CLUB]
+
+    result = await api.get_league(league.id)
+
+    assert result.current_round is None
+    mocks.match_repo.list_by_league.assert_not_awaited()  # no busca partidos
+
+
+async def test_get_league_current_round_started(api, mocks):
+    league = make_league_detail("started")
+    mocks.league_repo.get.return_value = league
+    mocks.league_repo.list_clubs_of_league.return_value = [CLUB]
+    mocks.match_repo.list_by_league.return_value = [
+        make_match(1, MatchStatus.finished),
+        make_match(1, MatchStatus.finished),
+        make_match(2, MatchStatus.in_progress),
+        make_match(2, MatchStatus.finished),
+        make_match(3, MatchStatus.scheduled),
+    ]
+
+    result = await api.get_league(league.id)
+
+    assert result.current_round == 2  # la fecha 2 todavía tiene un partido en juego
+    mocks.match_repo.list_by_league.assert_awaited_once_with(league.id)
+
+
+async def test_get_league_current_round_first_round(api, mocks):
+    league = make_league_detail("started")
+    mocks.league_repo.get.return_value = league
+    mocks.league_repo.list_clubs_of_league.return_value = [CLUB]
+    mocks.match_repo.list_by_league.return_value = [
+        make_match(1, MatchStatus.scheduled),
+        make_match(2, MatchStatus.scheduled),
+    ]
+
+    result = await api.get_league(league.id)
+
+    assert result.current_round == 1  # recién iniciada, en la ventana de la fecha 1
+
+
+async def test_get_league_current_round_all_matches_finished(api, mocks):
+    league = make_league_detail("started")
+    mocks.league_repo.get.return_value = league
+    mocks.league_repo.list_clubs_of_league.return_value = [CLUB]
+    mocks.match_repo.list_by_league.return_value = [
+        make_match(1, MatchStatus.finished),
+        make_match(2, MatchStatus.finished),
+    ]
+
+    result = await api.get_league(league.id)
+
+    assert result.current_round == 2  # todavía no pasó a finished: queda la última fecha
+
+
+async def test_get_league_not_found(api, mocks):
+    mocks.league_repo.get.return_value = None
 
     with (
         pytest.raises(HTTPException) as error
     ):  # basicamente digo, lo que viene tiene que ser una excepcion, y lo guardo en error
-        await api.get_league(league.id)
+        await api.get_league(uuid.uuid4())
 
     assert error.value.status_code == 404
 
@@ -380,7 +464,7 @@ async def test_list_leagues_with_name_filter(api, mocks):
         max_clubs=5,
         status="not_started",
         allows_draws=True,
-        creator_club_id=uuid.uuid4(),
+        creator_club_id=CLUB.id,
     )
     mocks.league_repo.list_not_started.return_value = [league]
     mocks.league_repo.list_clubs_of_league.return_value = []
