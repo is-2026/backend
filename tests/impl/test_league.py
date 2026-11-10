@@ -380,6 +380,7 @@ async def test_list_leagues_with_name_filter(api, mocks):
         max_clubs=5,
         status="not_started",
         allows_draws=True,
+        creator_club_id=uuid.uuid4(),
     )
     mocks.league_repo.list_not_started.return_value = [league]
     mocks.league_repo.list_clubs_of_league.return_value = []
