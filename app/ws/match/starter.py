@@ -2,6 +2,7 @@ import asyncio
 import logging
 import uuid
 
+from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
 from app.db.match import MatchDB, MatchStatus
 from app.db.session import SessionLocal
@@ -12,10 +13,12 @@ from app.engine.constants import (
     TICKS_PER_MINUTE,
 )
 from app.engine.state import MatchState, PlayerState, Side
+from app.repositories.behavior_repository import BehaviorRepository
 from app.repositories.club_repository import ClubRepository
 from app.repositories.friendly_repository import FriendlyRepository, SquadMember
 from app.repositories.league_repository import LeagueRepository
 from app.repositories.match_repository import MatchRepository
+from app.ws.match.coach import ClubBehavior, CoachSetup
 from app.ws.match.info import ClubSummary, LineupPlayer, MatchInfo
 from app.ws.match.runner import LiveMatch, live_matches, start_match
 
@@ -104,6 +107,26 @@ def build_match_info(
     )
 
 
+def build_coach_setup(club: ClubDB, behaviors: list[BehaviorDB]) -> CoachSetup | None:
+    if club.coach_behavior_id is None:
+        return None
+    coach = next(
+        (b for b in behaviors if b.id == club.coach_behavior_id and b.kind == "coach"),
+        None,
+    )
+    if coach is None:
+        logger.warning("El DT %s del club %s no existe", club.coach_behavior_id, club.id)
+        return None
+    return CoachSetup(
+        code=coach.code,
+        behaviors={
+            str(b.id): ClubBehavior(name=b.name, code=b.code)
+            for b in behaviors
+            if b.kind == "player"
+        },
+    )
+
+
 class MatchStarter:
     """Carga un partido de la base y lo larga en el runner."""
 
@@ -153,7 +176,24 @@ class MatchStarter:
             )
             info = build_match_info(home_club, away_club, squad)
 
-            live = start_match(match_id, state, codes, info, allows_draws=allows_draws)
+            # cargo los DT
+            coaches: dict[str, CoachSetup] = {}
+            for club in (home_club, away_club):
+                if club.coach_behavior_id is None:
+                    continue
+                behaviors = await BehaviorRepository(session).list_by_club(club.id)
+                setup = build_coach_setup(club, behaviors)
+                if setup is not None:
+                    coaches[str(club.id)] = setup
+
+            live = start_match(
+                match_id,
+                state,
+                codes,
+                info,
+                allows_draws=allows_draws,
+                coaches=coaches,
+            )
             await MatchRepository(session).set_status(match_id, MatchStatus.in_progress)
 
         task = asyncio.create_task(

@@ -322,3 +322,40 @@ async def test_league_shootout_gives_2_points_to_the_winner(
     assert (home_standing.points, home_standing.lost) == (0, 1)
     # los penales no suman goles: solo el 1 a 1
     assert (home_standing.goals_for, home_standing.goals_against) == (1, 1)
+
+
+# --- DT ---
+async def give_coach(session_factory, club_id):
+    async with session_factory() as s:
+        coach = BehaviorDB(
+            id=uuid.uuid4(),
+            name="DT",
+            code="def decide_coach():\n    pass\n",
+            club_id=club_id,
+            kind="coach",
+        )
+        s.add(coach)
+        await s.flush()
+        (await s.get(ClubDB, club_id)).coach_behavior_id = coach.id
+        await s.commit()
+
+
+async def test_changing_the_coach_during_the_match(
+    session_factory, match_id, monkeypatch
+):
+    monkeypatch.setattr(
+        starter_module, "start_match", functools.partial(start_match, start_delay=60)
+    )
+    match = await get_match(session_factory, match_id)
+    await give_coach(session_factory, match.home_club_id)
+    await MatchStarter(session_factory).start(match_id)
+    live = live_matches[match_id]
+
+    # el local saca el DT y el visitante pone uno, el partido sigue igual
+    async with session_factory() as s:
+        (await s.get(ClubDB, match.home_club_id)).coach_behavior_id = None
+        await s.commit()
+    await give_coach(session_factory, match.away_club_id)
+
+    assert list(live.coaches) == [str(match.home_club_id)]
+    live.task.cancel()

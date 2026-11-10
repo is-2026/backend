@@ -30,7 +30,11 @@ from app.ws.match.substitutions import (
 from app.ws.match.live_behavior import validate_player_on_field, PlayerNotOnField, update_info_match
 from app.ws.match.messages import behavior_changed_message
 from app.models.penalty_order_input import PenaltyOrderInput
-from app.ws.match.penalty_order import InvalidPenaltyOrder, build_penalty_order
+from app.ws.match.penalty_order import (
+    InvalidPenaltyOrder,
+    build_penalty_order,
+    load_penalty_order,
+)
 
 
 def _to_match(match_db: MatchDB) -> Match:
@@ -48,6 +52,14 @@ def _to_match(match_db: MatchDB) -> Match:
         home_penalties=match_db.home_penalties,
         away_penalties=match_db.away_penalties,
     )
+
+
+
+def _coach_in_match(live: LiveMatch, team_id: str) -> None:
+    if team_id in live.coaches:
+        raise HTTPException(
+            status_code=409, detail="El club tiene un DT a cargo del partido"
+        )
 
 
 class MatchApiImpl(BaseMatchApi):
@@ -81,6 +93,8 @@ class MatchApiImpl(BaseMatchApi):
             raise HTTPException(
                 status_code=403, detail="El club no juega este partido"
             ) from e
+
+        _coach_in_match(live, team_id)
 
         if live.phase == Phase.PENALTIES:
             raise HTTPException(
@@ -120,6 +134,8 @@ class MatchApiImpl(BaseMatchApi):
             raise HTTPException(
                 status_code=403, detail="El club no juega este partido"
             ) from e
+
+        _coach_in_match(live, team_id)
 
         behavior = await BehaviorRepository(self._session).get_id_and_club(
             schedule_substitution_input.substitution_behavior_id, club_id
@@ -172,6 +188,8 @@ class MatchApiImpl(BaseMatchApi):
                 status_code=403, detail="El club no juega este partido"
             ) from e
 
+        _coach_in_match(live, team_id)
+
         try:
             cancel(live.pending_substitutions, team_id)
         except NoPendingSubstitution as e:
@@ -194,6 +212,8 @@ class MatchApiImpl(BaseMatchApi):
             raise HTTPException(
                 status_code=403, detail="El club no juega este partido"
             ) from e
+
+        _coach_in_match(live, team_id)
 
         # la ventana está abierta desde penaltyShootoutStart hasta que arranca la tanda
         if live.phase != Phase.PENALTIES or live.shootout is not None:
@@ -220,7 +240,4 @@ class MatchApiImpl(BaseMatchApi):
                 )
             codes.append(behavior.code)
 
-        # se cargan ya, en la ventana, así el hijo los tiene listos cuando arranca la tanda
-        for player, code in zip(kickers, codes):
-            live.executor.set_player_behavior(player, code)
-        live.penalty_orders[team_id] = kickers
+        load_penalty_order(live, team_id, kickers, codes)

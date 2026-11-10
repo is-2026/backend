@@ -5,11 +5,13 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.engine.behavior_exec import load_brain, take_snapshot
+from app.engine.behavior_exec import CoachSnapshot, load_brain, take_snapshot
+from app.engine.coach_orders import SetBehavior
 from app.engine.constants import CODE_LOAD_TIMEOUT
 from app.engine.sandbox import (
     _behavior_timeout,
     _decide_all,
+    _decide_coach,
     _load_brain_with_time_limit,
     start_worker,
 )
@@ -119,8 +121,12 @@ def spawn_worker():
     """Levanta workers de verdad y, pase lo que pase en el test, los cierra."""
     started = []
 
-    def spawn(players, codes):
-        proc, conn = start_worker(players, {k: dedent(v) for k, v in codes.items()})
+    def spawn(players, codes, coach_code=None):
+        proc, conn = start_worker(
+            players,
+            {k: dedent(v) for k, v in codes.items()},
+            dedent(coach_code) if coach_code is not None else None,
+        )
         started.append((proc, conn))
         return proc, conn
 
@@ -139,11 +145,13 @@ def spawn_worker():
 
 
 def ask(conn, state, timeout=5.0):
-    """Pide un decide al hijo. timeout largo: el primero incluye el arranque."""
+    """Pide un decide al hijo (sin DT) y devuelve solo las acciones.
+    timeout largo: el primero incluye el arranque."""
     snapshot = take_snapshot(state, Side.HOME)
-    conn.send(("decide", snapshot, [player.id for player in home(state)]))
+    conn.send(("decide", snapshot, [player.id for player in home(state)], None))
     assert conn.poll(timeout), "el hijo no contestó"
-    return conn.recv()
+    actions, _ = conn.recv()
+    return actions
 
 
 # --- _decide_all directo ---
@@ -232,3 +240,72 @@ def test_worker_close(state, spawn_worker):
     proc.join(2)
     assert proc.exitcode == 0
     assert multiprocessing.active_children() == []
+
+
+# --- DT ---
+
+COACH = """
+    def decide_coach():
+        set_behavior("h1", "b2")
+"""
+
+# se cuelga en la primera llamada y despues da la orden
+COACH_HANG_FIRST = """
+    calls = 0
+    def decide_coach():
+        global calls
+        calls += 1
+        if calls == 1:
+            while True:
+                pass
+        set_behavior("h1", "b2")
+"""
+
+
+
+def coach_snapshot():
+    return CoachSnapshot(
+        own_score=0,
+        rival_score=0,
+        tick=10,
+        total_ticks=3000,
+        on_field=(("h1", "b1"), ("h2", "b1"), ("h3", "b1")),
+        bench=("h4", "h5", "h6"),
+        behaviors=(("b1", "Atacante"), ("b2", "Defensor")),
+        penalty_shootout=False,
+    )
+
+
+def ask_with_coach(conn, state, timeout=5.0):
+    snapshot = take_snapshot(state, Side.HOME)
+    ids = [player.id for player in home(state)]
+    conn.send(("decide", snapshot, ids, coach_snapshot()))
+    assert conn.poll(timeout), "el hijo no contestó"
+    return conn.recv()
+
+
+def test_coach_out_of_memory_is_removed(alarm_handler):
+    bombita = Mock()
+    bombita.run.side_effect = MemoryError
+
+    assert _decide_coach(bombita, coach_snapshot()) == ([], None)
+
+
+def test_worker_returns_actions_and_orders(state, spawn_worker):
+    _, conn = spawn_worker(home(state), everyone(state, GO_RIGHT), COACH)
+
+    actions, orders = ask_with_coach(conn, state)
+
+    assert set(actions) == {"h1", "h2", "h3"}
+    assert orders == [SetBehavior("h1", "b2")]
+
+
+def test_hanging_coach_does_not_stop_the_players(state, spawn_worker):
+    _, conn = spawn_worker(home(state), everyone(state, GO_RIGHT), COACH_HANG_FIRST)
+
+    actions, orders = ask_with_coach(conn, state)
+    assert set(actions) == {"h1", "h2", "h3"}
+    assert orders == []
+
+    _, orders = ask_with_coach(conn, state)
+    assert orders == [SetBehavior("h1", "b2")]

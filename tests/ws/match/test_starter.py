@@ -10,7 +10,13 @@ from app.engine.constants import FORMATIONS, FRIENDLY_TOTAL_TICKS
 from app.engine.engine import kickoff
 from app.engine.state import Side
 from app.repositories.friendly_repository import SquadMember
-from app.ws.match.starter import InvalidLineup, build_match_info, build_match_state
+from app.ws.match.coach import ClubBehavior
+from app.ws.match.starter import (
+    InvalidLineup,
+    build_coach_setup,
+    build_match_info,
+    build_match_state,
+)
 
 
 def make_member(club_id, number, is_starter):
@@ -125,3 +131,18 @@ def test_build_match_info(home_club, away_club, squad):
     assert starter.is_starter and starter.behavior_name == "B1"
     assert starter.behavior_id == str(squad[6].behavior.id)
     assert not sub.is_starter and sub.behavior_id is None
+
+
+# --- DT ---
+
+
+def test_build_coach_setup(home_club):
+    coach = BehaviorDB(id=uuid.uuid4(), name="DT", code="dt", kind="coach")
+    player = BehaviorDB(id=uuid.uuid4(), name="Ata", code="ata", kind="player")
+    home_club.coach_behavior_id = coach.id
+
+    setup = build_coach_setup(home_club, [coach, player])
+
+    assert setup.code == "dt"
+    # solo los de jugador
+    assert setup.behaviors == {str(player.id): ClubBehavior(name="Ata", code="ata")}

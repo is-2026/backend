@@ -7,7 +7,8 @@ from textwrap import dedent
 import pytest
 
 from app.engine.actions import Move
-from app.engine.behavior_exec import create_brains, decide_actions
+from app.engine.behavior_exec import CoachSnapshot, create_brains, decide_actions
+from app.engine.coach_orders import PenaltyOrder, SetBehavior
 from app.engine.constants import STARTUP_DEADLINE, TICK_DEADLINE
 from app.engine.executor import BehaviorExecutor
 from app.engine.state import Side
@@ -41,8 +42,8 @@ def make_executor():
     """Hace executors, al final le hace close() a cada uno"""
     started = []
 
-    def make(state, codes):
-        executor = BehaviorExecutor(state, codes)
+    def make(state, codes, coach_codes=None):
+        executor = BehaviorExecutor(state, codes, coach_codes)
         started.append(executor)
         return executor
 
@@ -157,3 +158,51 @@ async def test_set_player_behavior_loads_a_player_not_on_the_field(state, make_e
 
     with_bench = replace(state, players=[*state.players, bench])
     assert await executor.decide(with_bench) == {"h9": Move(1.0, 0.0, 100.0)}
+
+
+# --- DT ---
+
+COACH = """
+    def decide_coach():
+        if is_penalty_shootout():
+            penalty_order([("h1", "b1")] * 5)
+        else:
+            set_behavior("h1", "b2")
+"""
+
+
+def coach_snapshot(penalty_shootout=False):
+    return CoachSnapshot(
+        own_score=0,
+        rival_score=0,
+        tick=0,
+        total_ticks=3000,
+        on_field=(("h1", "b1"),),
+        bench=(),
+        behaviors=(("b1", "Atacante"), ("b2", "Defensor")),
+        penalty_shootout=penalty_shootout,
+    )
+
+
+async def test_decide_with_coach_orders_by_side(state, make_executor):
+    # solo el local tiene DT
+    executor = make_executor(
+        state, {"h1": dedent(GO_RIGHT)}, {Side.HOME: dedent(COACH)}
+    )
+
+    actions, orders = await executor.decide_with_coach(
+        state, {Side.HOME: coach_snapshot(), Side.AWAY: coach_snapshot()}
+    )
+
+    assert actions == {"h1": Move(1.0, 0.0, 100.0)}
+    assert orders == {Side.HOME: [SetBehavior("h1", "b2")], Side.AWAY: []}
+    # decide sigue devolviendo solo las acciones
+    assert await executor.decide(state) == {"h1": Move(1.0, 0.0, 100.0)}
+
+
+async def test_decide_coaches_for_penalties(state, make_executor):
+    executor = make_executor(state, {}, {Side.HOME: dedent(COACH)})
+
+    orders = await executor.decide_coaches({Side.HOME: coach_snapshot(True)})
+
+    assert orders == {Side.HOME: [PenaltyOrder((("h1", "b1"),) * 5)]}
