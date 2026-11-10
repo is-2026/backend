@@ -1,7 +1,7 @@
 """ING-142 agregar formaciones en friendlies
 
 Revision ID: e342ab6a39d9
-Revises: 15da9578a2bc
+Revises: 3ee6cab1e534
 Create Date: 2026-11-09 17:32:59.067689
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'e342ab6a39d9'
-down_revision: Union[str, Sequence[str], None] = '15da9578a2bc'
+down_revision: Union[str, Sequence[str], None] = '3ee6cab1e534'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
