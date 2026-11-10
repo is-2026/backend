@@ -14,7 +14,7 @@ from app.db.match import MatchDB, MatchStatus
 from app.db.player import PlayerDB
 from app.db.standings import LeagueStandingsDB
 from app.db.user import UserDB
-from app.engine.constants import TICKS_PER_MINUTE
+from app.engine.constants import FORMATIONS, TICKS_PER_MINUTE
 from app.engine.state import Side
 from app.ws.match import starter as starter_module
 from app.ws.match.runner import live_matches, start_match
@@ -72,6 +72,8 @@ async def match_id(session):
             rival_club_id=away,
             status="accepted",
             match_id=match_id,
+            creator_formation="OFFENSIVE_LINE",
+            rival_formation="DEFENSIVE_LINE",
         )
     )
     await session.flush()
@@ -118,6 +120,9 @@ async def test_start_registers_match_with_info_and_sets_in_progress(
     assert len(live.state.players) == 6
     assert (live.info.home_club.name, live.info.away_club.name) == ("local", "visita")
     assert len(live.info.home_lineup) == len(live.info.away_lineup) == 6
+    # cada club con la formación que eligió en el amistoso
+    assert live.state.home_formation == FORMATIONS["OFFENSIVE_LINE"]
+    assert live.state.away_formation == FORMATIONS["DEFENSIVE_LINE"]
     assert (
         await get_match(session_factory, match_id)
     ).status == MatchStatus.in_progress
@@ -174,12 +179,18 @@ async def league_match(session):
         )
     )
     await session.flush()
-    for rank, (club, b, players) in enumerate(
-        ((home, home_b, home_players), (away, away_b, away_players)), start=1
+    for rank, (club, b, players, formation) in enumerate(
+        (
+            (home, home_b, home_players, "OFFENSIVE_LINE"),
+            (away, away_b, away_players, "DEFENSIVE_LINE"),
+        ),
+        start=1,
     ):
         enrollment_id = uuid.uuid4()
         session.add(
-            LeagueEnrollmentDB(id=enrollment_id, league_id=league_id, club_id=club)
+            LeagueEnrollmentDB(
+                id=enrollment_id, league_id=league_id, club_id=club, formation=formation
+            )
         )
         session.add(LeagueStandingsDB(league_id=league_id, club_id=club, rank=rank))
         await session.flush()
@@ -227,6 +238,9 @@ async def test_league_match_uses_league_duration_and_updates_standings(
     save_task = await starter.start(match_id)
     live = live_matches[match_id]
     assert live.state.total_ticks == 2 * TICKS_PER_MINUTE
+    # cada club con la formación de su inscripción en la liga
+    assert live.state.home_formation == FORMATIONS["OFFENSIVE_LINE"]
+    assert live.state.away_formation == FORMATIONS["DEFENSIVE_LINE"]
     await save_task
 
     async with session_factory() as s:

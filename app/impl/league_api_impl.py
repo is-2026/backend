@@ -108,6 +108,7 @@ class LeaguesApiImpl(BaseLeaguesApi):
                     for pl in create_league_input.players
                 ],
                 allows_draws=create_league_input.allows_draws,
+                formation=create_league_input.formation.value,
             )
         except IntegrityError as exc_info:
             raise HTTPException(
@@ -256,7 +257,10 @@ class LeaguesApiImpl(BaseLeaguesApi):
         # inscribo al club
         try:
             await repo.add_enrollment(
-                league_id=league_id, club_id=club.id, squadPlayer=data_players
+                league_id=league_id,
+                club_id=club.id,
+                squadPlayer=data_players,
+                formation=join_league_input.formation.value,
             )
         except ClubAlreadyEnrolled:
             # club ya inscripto (error 409)

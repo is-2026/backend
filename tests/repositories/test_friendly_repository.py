@@ -56,7 +56,7 @@ async def test_create_friendly_ok(session):
     players = await make_players(session, club_id)
     squad = [SquadPlayerData(pid, i < 3, None) for i, pid in enumerate(players)]
 
-    friendly = await FriendlyRepository(session).create(club_id, "hash", squad)
+    friendly = await FriendlyRepository(session).create(club_id, "hash", squad, "TRIANGLE")
 
     assert friendly.id is not None
     assert friendly.creator_club_id == club_id
@@ -79,7 +79,7 @@ async def test_create_friendly_without_password(session):
     players = await make_players(session, club_id, n=1)
     squad = [SquadPlayerData(players[0], True, None)]
 
-    friendly = await FriendlyRepository(session).create(club_id, None, squad)
+    friendly = await FriendlyRepository(session).create(club_id, None, squad, "TRIANGLE")
 
     assert friendly.hashed_password is None
 
@@ -89,7 +89,7 @@ async def test_create_friendly_nonexistent_player_raises(session):
     squad = [SquadPlayerData(uuid.uuid4(), True, None)]  # jugador que no existe
 
     with pytest.raises(InvalidSquad):
-        await FriendlyRepository(session).create(club_id, "hash", squad)
+        await FriendlyRepository(session).create(club_id, "hash", squad, "TRIANGLE")
 
 
 async def test_create_friendly_duplicate_player_raises(session):
@@ -101,7 +101,7 @@ async def test_create_friendly_duplicate_player_raises(session):
     ]
 
     with pytest.raises(InvalidSquad):
-        await FriendlyRepository(session).create(club_id, "hash", squad)
+        await FriendlyRepository(session).create(club_id, "hash", squad, "TRIANGLE")
 
 
 async def test_list_available_friendlies_empty(session):

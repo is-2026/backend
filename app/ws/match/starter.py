@@ -5,7 +5,12 @@ import uuid
 from app.db.club import ClubDB
 from app.db.match import MatchDB, MatchStatus
 from app.db.session import SessionLocal
-from app.engine.constants import FRIENDLY_TOTAL_TICKS, TICKS_PER_MINUTE, TRIANGLE_HOME
+from app.engine.constants import (
+    DEFAULT_FORMATION,
+    FORMATIONS,
+    FRIENDLY_TOTAL_TICKS,
+    TICKS_PER_MINUTE,
+)
 from app.engine.state import MatchState, PlayerState, Side
 from app.repositories.club_repository import ClubRepository
 from app.repositories.friendly_repository import FriendlyRepository, SquadMember
@@ -40,6 +45,8 @@ def build_match_state(
     match: MatchDB,
     squad: list[SquadMember],
     total_ticks: int = FRIENDLY_TOTAL_TICKS,  # por defecto: duracion de un friendly
+    home_formation: str = DEFAULT_FORMATION,
+    away_formation: str = DEFAULT_FORMATION,
 ) -> tuple[MatchState, dict[str, str]]:
     """Arma el estado inicial del motor y codes = player_id -> código.
     Solo entran los titulares; su orden en `squad` decide la posición en la formación."""
@@ -53,9 +60,9 @@ def build_match_state(
 
     state = MatchState(
         home_team_id=str(match.home_club_id),
-        home_formation=TRIANGLE_HOME,
+        home_formation=FORMATIONS[home_formation],
         away_team_id=str(match.away_club_id),
-        away_formation=TRIANGLE_HOME,  # el motor lo espeja
+        away_formation=FORMATIONS[away_formation],  # el motor lo espeja
         players=[_player_state(m, Side.HOME) for m in home]
         + [_player_state(m, Side.AWAY) for m in away],
         total_ticks=total_ticks,
@@ -124,12 +131,26 @@ class MatchStarter:
                 squad = await leagues.get_squad_by_match(match_id)
                 total_ticks = league.match_duration_minutes * TICKS_PER_MINUTE
                 allows_draws = league.allows_draws
+                # la formación vigente de cada club en la liga (la cambia PUT /leagues/{id}/lineup)
+                home = await leagues.get_enrollment(match.league_id, match.home_club_id)
+                away = await leagues.get_enrollment(match.league_id, match.away_club_id)
+                home_formation, away_formation = home.formation, away.formation
             else:
-                squad = await FriendlyRepository(session).get_squad_by_match(match_id)
+                friendlies = FriendlyRepository(session)
+                squad = await friendlies.get_squad_by_match(match_id)
                 total_ticks = FRIENDLY_TOTAL_TICKS
                 allows_draws = True  # los amistosos admiten empate
+                home_formation, away_formation = await friendlies.get_formations_by_match(
+                    match_id
+                )
 
-            state, codes = build_match_state(match, squad, total_ticks=total_ticks)
+            state, codes = build_match_state(
+                match,
+                squad,
+                total_ticks=total_ticks,
+                home_formation=home_formation,
+                away_formation=away_formation,
+            )
             info = build_match_info(home_club, away_club, squad)
 
             live = start_match(match_id, state, codes, info, allows_draws=allows_draws)

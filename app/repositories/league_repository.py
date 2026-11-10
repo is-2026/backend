@@ -88,6 +88,7 @@ class LeagueRepository:
         club_id: uuid.UUID,
         squadPlayer: list[SquadPlayerData],
         allows_draws: bool = True,
+        formation: str = "TRIANGLE",
     ) -> LeagueDB:
         league = LeagueDB(
             id=uuid.uuid4(),
@@ -100,7 +101,7 @@ class LeagueRepository:
             creator_club_id=club_id,
         )
         enrollment = LeagueEnrollmentDB(
-            id=uuid.uuid4(), league_id=league.id, club_id=club_id
+            id=uuid.uuid4(), league_id=league.id, club_id=club_id, formation=formation
         )
         enrolled_players = [
             LeagueEnrollmentPlayerDB(
@@ -132,10 +133,11 @@ class LeagueRepository:
         league_id: uuid.UUID,
         club_id: uuid.UUID,
         squadPlayer: list[SquadPlayerData],
+        formation: str = "TRIANGLE",
     ) -> None:
         # creo la tabla de inscripcion
         enrollment = LeagueEnrollmentDB(
-            id=uuid.uuid4(), league_id=league_id, club_id=club_id
+            id=uuid.uuid4(), league_id=league_id, club_id=club_id, formation=formation
         )
         # mapeo cada squadPlayer a LeagueEnrollmentPlayerDB con el enrollment que creamos antes
         enrolled_players = [

@@ -6,7 +6,7 @@ from app.db.behavior import BehaviorDB
 from app.db.club import ClubDB
 from app.db.match import MatchDB
 from app.db.player import PlayerDB
-from app.engine.constants import FRIENDLY_TOTAL_TICKS
+from app.engine.constants import FORMATIONS, FRIENDLY_TOTAL_TICKS
 from app.engine.engine import kickoff
 from app.engine.state import Side
 from app.repositories.friendly_repository import SquadMember
@@ -76,6 +76,28 @@ def test_order_decides_formation_position(match, squad):
     assert first_home.id == str(squad[6].player.id)  # el primer titular del local
     assert (first_home.x, first_home.y) == (-4.0, 0.0)
     assert (first_away.x, first_away.y) == (4.0, 0.0)
+
+
+@pytest.mark.parametrize("formation", FORMATIONS)
+def test_starters_take_their_formation(match, squad, formation):
+    state, _ = build_match_state(
+        match, squad, home_formation=formation, away_formation=formation
+    )
+    kickoff(state)
+
+    home = [(p.x, p.y) for p in state.players if p.side == Side.HOME]
+    away = [(p.x, p.y) for p in state.players if p.side == Side.AWAY]
+    assert home == list(FORMATIONS[formation])
+    assert away == [(-x, -y) for x, y in FORMATIONS[formation]]  # espejado
+
+
+def test_each_club_can_have_its_own_formation(match, squad):
+    state, _ = build_match_state(
+        match, squad, home_formation="OFFENSIVE_LINE", away_formation="DEFENSIVE_LINE"
+    )
+
+    assert state.home_formation == FORMATIONS["OFFENSIVE_LINE"]
+    assert state.away_formation == FORMATIONS["DEFENSIVE_LINE"]
 
 
 def test_missing_starter_raises(match, squad):

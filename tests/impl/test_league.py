@@ -44,6 +44,7 @@ def make_create_league_input(starters=3, password=None):
         password=password,
         max_clubs=5,
         match_duration_minutes=10,
+        formation="TRIANGLE",
         players=players,
     )
 
@@ -59,6 +60,7 @@ def make_join_league_input(starters=3, password=None):
     ]
     return JoinLeagueInput(
         password=password,
+        formation="TRIANGLE",
         players=players,
     )
 
@@ -124,6 +126,18 @@ async def test_create_league_public(api, mocks):
     assert result.registered_clubs[0].club_name == "River Plate"
     assert (
         mocks.league_repo.create_with_enrollment.await_args.kwargs["club_id"] == CLUB.id
+    )
+
+
+async def test_create_league_saves_formation(api, mocks):
+    data = make_create_league_input()
+    data.formation = "DEFENSIVE_LINE"
+
+    await api.create_league(data, CLUB)
+
+    assert (
+        mocks.league_repo.create_with_enrollment.await_args.kwargs["formation"]
+        == "DEFENSIVE_LINE"
     )
 
 
@@ -562,6 +576,7 @@ async def make_body(session, club) -> dict:
         "name": "Mi liga",
         "max_clubs": 5,
         "match_duration_minutes": 10,
+        "formation": "TRIANGLE",
         "players": squad,
     }
 
@@ -660,6 +675,27 @@ async def test_endpoint_create_league_max_clubs_too_low(client, session, club):
     r = await client.post(URL, json=body, headers=auth_header(club))
 
     assert r.status_code == 400
+    assert await count_leagues(session) == 0
+
+
+async def test_endpoint_create_league_without_formation(client, session, club):
+    body = await make_body(session, club)
+    del body["formation"]
+
+    r = await client.post(URL, json=body, headers=auth_header(club))
+
+    assert r.status_code == 400
+    assert await count_leagues(session) == 0
+
+
+async def test_endpoint_create_league_unknown_formation(client, session, club):
+    body = await make_body(session, club)
+    body["formation"] = "DIAGONAL"  # no está en el contrato
+
+    r = await client.post(URL, json=body, headers=auth_header(club))
+
+    assert r.status_code == 400
+    assert "formation" in r.json()["message"]
     assert await count_leagues(session) == 0
 
 
@@ -870,6 +906,20 @@ async def test_join_league_public_endpoint(api, mocks):
 
     # verificamos que se haya intentado añadir la inscripcion
     mocks.league_repo.add_enrollment.assert_awaited_once()
+
+
+async def test_join_league_saves_formation(api, mocks):
+    league_id = uuid.uuid4()
+    mocks.league_repo.get.return_value = SimpleNamespace(
+        id=league_id, name="Liga", hashed_password=None, max_clubs=5, status="not_started"
+    )
+    mocks.league_repo.list_clubs_of_league.return_value = []
+    data = make_join_league_input()
+    data.formation = "OFFENSIVE_LINE"
+
+    await api.join_league(league_id, data, CLUB)
+
+    assert mocks.league_repo.add_enrollment.await_args.kwargs["formation"] == "OFFENSIVE_LINE"
 
 
 async def test_join_league_private_wrong_password(api, mocks):

@@ -30,8 +30,15 @@ BALL_FRICTION = 0.95  # factor por tick
 BALL_BOUNCE = 0.8  # energía que conserva al rebotar
 BALL_STOP_SPEED = 0.1  # m/s, por debajo se considera quieta
 
-# Posiciones iniciales del local (formación TRIANGLE) el visitante las espeja
+# Posiciones iniciales de cada formación, vistas desde el local (ataca hacia +x) y en su
+# mitad; el visitante las espeja. Las claves son los valores de FormationPreset del contrato.
 TRIANGLE_HOME = ((-4.0, 0.0), (-12.0, -5.0), (-12.0, 5.0))
+FORMATIONS = {
+    "TRIANGLE": TRIANGLE_HOME,
+    "OFFENSIVE_LINE": ((-3.0, -6.0), (-3.0, 0.0), (-3.0, 6.0)),
+    "DEFENSIVE_LINE": ((-15.0, -6.0), (-15.0, 0.0), (-15.0, 6.0)),
+}
+DEFAULT_FORMATION = "TRIANGLE"
 
 # Distancia de separación mínima entre jugadores (no es colisión, es más un forcefield)
 SOCIAL_DISTANCING = 1.0

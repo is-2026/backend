@@ -99,7 +99,7 @@ async def test_create_friendly_public(api, mocks):
         id=uuid.uuid4(), creator_club_id=CLUB_CREATOR, status="waiting_for_rival"
     )
  
-    result = await api.create_friendly(CreateFriendlyInput(players=make_squad(3)), CLUB_CREATOR)
+    result = await api.create_friendly(CreateFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_CREATOR)
  
     mocks.hash_password.assert_not_awaited()  # sin contraseña no se hashea nada
     assert result.is_private is False
@@ -113,18 +113,30 @@ async def test_create_friendly_private(api, mocks):
     )
  
     result = await api.create_friendly(
-        CreateFriendlyInput(players=make_squad(3), password="1234"), CLUB_CREATOR
+        CreateFriendlyInput(formation="TRIANGLE", players=make_squad(3), password="1234"), CLUB_CREATOR
     )
  
     mocks.hash_password.assert_awaited_once_with("1234")
     assert result.is_private is True
  
  
+async def test_create_friendly_saves_formation(api, mocks):
+    mocks.friendly_repo.create.return_value = SimpleNamespace(
+        id=uuid.uuid4(), creator_club_id=CLUB_CREATOR, status="waiting_for_rival"
+    )
+
+    await api.create_friendly(
+        CreateFriendlyInput(formation="DEFENSIVE_LINE", players=make_squad(3)), CLUB_CREATOR
+    )
+
+    assert mocks.friendly_repo.create.await_args.kwargs["formation"] == "DEFENSIVE_LINE"
+
+
 async def test_create_friendly_players_other_club(api, mocks):
     mocks.player_repo.count_club_players.return_value = 5  # uno no es del club
  
     with pytest.raises(HTTPException) as error:
-        await api.create_friendly(CreateFriendlyInput(players=make_squad(3)), CLUB_CREATOR)
+        await api.create_friendly(CreateFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_CREATOR)
  
     assert error.value.status_code == 400
     mocks.friendly_repo.create.assert_not_awaited()  # no se llegó a crear nada
@@ -134,7 +146,7 @@ async def test_create_friendly_squad_invalid(api, mocks):
     mocks.friendly_repo.create.side_effect = InvalidSquad()  # el repo falla
  
     with pytest.raises(HTTPException) as error:
-        await api.create_friendly(CreateFriendlyInput(players=make_squad(3)), CLUB_CREATOR)
+        await api.create_friendly(CreateFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_CREATOR)
  
     assert error.value.status_code == 400
  
@@ -145,7 +157,7 @@ async def test_join_friendly_not_exist(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            uuid.uuid4(), JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+            uuid.uuid4(), JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
         )
  
     assert error.value.status_code == 404
@@ -158,7 +170,7 @@ async def test_join_friendly_not_available(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
         )
  
     assert error.value.status_code == 409
@@ -171,7 +183,7 @@ async def test_join_own_friendly(api, mocks):
     with pytest.raises(HTTPException) as error:
         # entra el mismo club que lo creó
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_CREATOR
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_CREATOR
         )
  
     assert error.value.status_code == 409
@@ -182,7 +194,7 @@ async def test_join_friendly_private_without_password(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
         )
  
     assert error.value.status_code == 400
@@ -197,7 +209,7 @@ async def test_join_friendly_password_incorrect(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3), password="mala"), CLUB_RIVAL
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3), password="mala"), CLUB_RIVAL
         )
  
     assert error.value.status_code == 400
@@ -210,7 +222,7 @@ async def test_join_friendly_squad_invalid(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(2)), CLUB_RIVAL  # solo 2 titulares
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(2)), CLUB_RIVAL  # solo 2 titulares
         )
  
     assert error.value.status_code == 400
@@ -224,7 +236,7 @@ async def test_join_friendly_players_other_club(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
         )
  
     assert error.value.status_code == 400
@@ -238,7 +250,7 @@ async def test_join_friendly_other_user_joined_first(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
         )
  
     assert error.value.status_code == 409
@@ -253,7 +265,7 @@ async def test_join_friendly_repo_squad_invalid(api, mocks):
  
     with pytest.raises(HTTPException) as error:
         await api.join_friendly(
-            friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+            friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
         )
  
     assert error.value.status_code == 400
@@ -276,7 +288,7 @@ async def test_join_friendly_ok(api, mocks):
     )
  
     result = await api.join_friendly(
-        friendly.id, JoinFriendlyInput(players=make_squad(3)), CLUB_RIVAL
+        friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3)), CLUB_RIVAL
     )
  
     # 1. devuelve el friendly con rival y match
@@ -295,6 +307,22 @@ async def test_join_friendly_ok(api, mocks):
     # 3. agendó el inicio del match
     api._schedule_start.assert_called_once_with(friendly.id, match.id)
  
+async def test_join_friendly_saves_formation(api, mocks):
+    friendly = friendly_waiting()
+    mocks.friendly_repo.get.return_value = friendly
+    mocks.friendly_repo.accept.return_value = (
+        friendly_accepted(friendly),
+        SimpleNamespace(id=uuid.uuid4()),
+    )
+
+    await api.join_friendly(
+        friendly.id,
+        JoinFriendlyInput(formation="OFFENSIVE_LINE", players=make_squad(3)),
+        CLUB_RIVAL,
+    )
+
+    assert mocks.friendly_repo.accept.await_args.args[3] == "OFFENSIVE_LINE"
+
 async def test_join_friendly_private_correct_password(api, mocks):
     friendly = friendly_waiting(hashed_password="hashed")
     match = SimpleNamespace(id=uuid.uuid4())
@@ -302,7 +330,7 @@ async def test_join_friendly_private_correct_password(api, mocks):
     mocks.friendly_repo.accept.return_value = (friendly_accepted(friendly, "hashed"), match)
  
     result = await api.join_friendly(
-        friendly.id, JoinFriendlyInput(players=make_squad(3), password="1234"), CLUB_RIVAL
+        friendly.id, JoinFriendlyInput(formation="TRIANGLE", players=make_squad(3), password="1234"), CLUB_RIVAL
     )
  
     mocks.verify_password.assert_awaited_once_with("1234", "hashed")

@@ -23,6 +23,7 @@ import json
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
+from app.models.formation_preset import FormationPreset
 from app.models.squad_player_input import SquadPlayerInput
 try:
     from typing import Self
@@ -34,8 +35,9 @@ class JoinLeagueInput(BaseModel):
     JoinLeagueInput
     """ # noqa: E501
     password: Optional[StrictStr] = None
+    formation: FormationPreset
     players: Annotated[List[SquadPlayerInput], Field(min_length=6, max_length=6)] = Field(description="Exactamente 3 con is_starter en true y 3 en false.")
-    __properties: ClassVar[List[str]] = ["password", "players"]
+    __properties: ClassVar[List[str]] = ["password", "formation", "players"]
 
     model_config = {
         "populate_by_name": True,
@@ -94,6 +96,7 @@ class JoinLeagueInput(BaseModel):
 
         _obj = cls.model_validate({
             "password": obj.get("password"),
+            "formation": obj.get("formation"),
             "players": [SquadPlayerInput.from_dict(_item) for _item in obj.get("players")] if obj.get("players") is not None else None
         })
         return _obj
