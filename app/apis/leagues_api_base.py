@@ -23,6 +23,7 @@ class BaseLeaguesApi:
         BaseLeaguesApi.subclasses = BaseLeaguesApi.subclasses + (cls,)
     async def list_leagues(
         self,
+        name: Optional[str] = None,
     ) -> List[LeagueDetail]:
         """Devuelve tanto ligas públicas como privadas. Solo no iniciadas"""
         ...

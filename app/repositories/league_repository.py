@@ -159,10 +159,12 @@ class LeagueRepository:
             await self._session.rollback()
             raise ClubAlreadyEnrolled(club_id) from e
 
-    async def list_not_started(self) -> list[LeagueDB]:
-        result = await self._session.execute(
-            select(LeagueDB).where(LeagueDB.status == "not_started")
-        )
+    async def list_not_started(self, name: str | None = None) -> list[LeagueDB]:
+        stmt = select(LeagueDB).where(LeagueDB.status == "not_started")
+        #si hay query param, busca por nombre
+        if name is not None:
+            stmt = stmt.where(LeagueDB.name.ilike(f"%{name}%"))
+        result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
     async def list_clubs_of_league(self, league_id: uuid.UUID) -> list[ClubDB]:
