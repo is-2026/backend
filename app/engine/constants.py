@@ -23,7 +23,7 @@ SPEED_MAX_RANGE = (4.0, 8.0)  # m/s
 CONTROL_RADIUS_RANGE = (0.5, 1.5)  # m
 KICK_SPEED_RANGE = (10.0, 25.0)  # m/s, pelota al 100% de power
 COOLDOWN_TICKS_RANGE = (10, 3)  # ticks, más agility = menos cooldown
-SHOT_SPREAD_RANGE = (20.0, 5.0)  # grados para cada lado, más control = menos desvío
+SHOT_SPREAD_RANGE = (30.0, 5.0)  # grados para cada lado, más control = menos desvío
 
 # Pelota
 BALL_FRICTION = 0.95  # factor por tick

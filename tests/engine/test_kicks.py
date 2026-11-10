@@ -27,7 +27,7 @@ def test_shoot_sets_ball_speed(state, rng, power_pct):
 
     # el desvío cambia la dirección, no la velocidad
     assert hypot(state.ball.vx, state.ball.vy) == pytest.approx(SHOT_SPEED_AFTER_TICK)
-    assert abs(degrees(atan2(state.ball.vy, state.ball.vx))) <= 12.5  # control 60
+    assert abs(degrees(atan2(state.ball.vy, state.ball.vx))) <= 17.5  # control 60
 
 
 def test_kick_sets_last_touch_and_cooldown(state, rng):
@@ -59,7 +59,7 @@ def test_shoot_at_goal_aims_at_rival_goal(
     assert (state.ball.vx > 0) == goes_right
 
 
-@pytest.mark.parametrize("control, spread", [(20, 20.0), (60, 12.5), (100, 5.0)])
+@pytest.mark.parametrize("control, spread", [(20, 30.0), (60, 17.5), (100, 5.0)])
 def test_shot_error_stays_within_spread(control, spread):
     errors = [degrees(_shot_error(random.Random(seed), control)) for seed in range(200)]
 
