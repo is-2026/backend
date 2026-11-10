@@ -131,7 +131,10 @@ class MatchStarter:
                 squad = await leagues.get_squad_by_match(match_id)
                 total_ticks = league.match_duration_minutes * TICKS_PER_MINUTE
                 allows_draws = league.allows_draws
-                home_formation = away_formation = DEFAULT_FORMATION  # falta league_enrollments.formation (ING-139)
+                # la formación vigente de cada club en la liga (la cambia PUT /leagues/{id}/lineup)
+                home = await leagues.get_enrollment(match.league_id, match.home_club_id)
+                away = await leagues.get_enrollment(match.league_id, match.away_club_id)
+                home_formation, away_formation = home.formation, away.formation
             else:
                 friendlies = FriendlyRepository(session)
                 squad = await friendlies.get_squad_by_match(match_id)
